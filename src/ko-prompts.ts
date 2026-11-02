@@ -7,7 +7,18 @@ const kw = (display: string) => ({ display })
 
 export const KO_PROMPTS = {
   main: {
-    commandLine: { canceled: '*취소됨*', invalidInput: '입력이 올바르지 않아요.' },
+    commandLine: {
+      canceled: '*취소됨*',
+      invalidInput: '입력이 올바르지 않아요.',
+      noLast: '(이전 명령 없음)',
+      unknownCommand: '없는 명령이에요',
+      executed: '실행한 명령',
+      showHistory: '명령 기록 보기',
+      placeholder: '명령 입력 (예: L, C, M, CO, E)',
+      showMessages: '메시지 기록 보기',
+      noHistory: '(기록 없음)',
+      close: '명령줄 닫기'
+    },
     mobileCommand: {
       length: '길이',
       angle: '각도',

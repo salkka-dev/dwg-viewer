@@ -3,17 +3,38 @@
 
 import { AcApDocManager, eventBus } from '@mlightcad/cad-simple-viewer'
 
-import { cancelCommand, currentLayer, drawingToDxf, runCommand, setCurrentLayer, setEditable, undoState } from './engine'
+import {
+  cancelCommand,
+  currentLayer,
+  drawingToDxf,
+  isCommandRunning,
+  runCommand,
+  selectionCount,
+  setCommandLineVisible,
+  setCurrentLayer,
+  setEditable,
+  undoState
+} from './engine'
 import { $, ask, el, icon, toast } from './ui'
 
 export interface EditHost {
   /** Base name of the open drawing, without extension. */
   docName(): string
+  /**
+   * Runs before the DXF is built, while the tap or key press still counts as
+   * a user action (the PC save dialog needs one). Resolves false to stop.
+   */
+  prepareSave(fileName: string): Promise<boolean>
   /** Stores the edited DXF; resolves false when it did not finish (cancelled or failed). */
   save(blob: Blob, fileName: string): Promise<boolean>
   /** Throws the edits away by reopening the drawing as it was opened. */
   revert(): Promise<void>
 }
+
+const CLI_INPUT = '.ml-cli-text'
+// Commands not worth repeating with Enter / Space / right-click.
+const NO_REPEAT = new Set(['undo', 'redo', 'select', 'zoom', 'pan', 'regen'])
+const usesMouse = () => matchMedia('(pointer: fine)').matches
 
 interface Tool {
   cmd: string
@@ -51,6 +72,7 @@ const LAYER_ICON = '<path d="M12 3 2 8l10 5 10-5-10-5zM2 13l10 5 10-5M2 18l10 5 
 let host: EditHost
 let editing = false
 let dirty = false
+let lastCommand: string | null = null
 
 export const isEditing = () => editing
 export const hasUnsavedEdits = () => editing && dirty
@@ -76,6 +98,8 @@ export function initEdit(h: EditHost) {
   })
   const editor = AcApDocManager.instance.curView.editor
   editor.events.commandWillStart.addEventListener(args => {
+    const name = args.command.globalName.toLowerCase()
+    if (!NO_REPEAT.has(name)) lastCommand = name
     markActive(args.command.globalName)
     // Grips of a preselected object stay on screen during MOVE/COPY/ROTATE and
     // swallow the base-point click; let picks go through to the drawing (they
@@ -87,6 +111,81 @@ export function initEdit(h: EditHost) {
     markActive(null)
     refreshState()
   })
+
+  document.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('contextmenu', onContextMenu)
+}
+
+/**
+ * AutoCAD habits with a keyboard: typing anywhere goes to the command line,
+ * Space works as Enter there, and Enter or Space with nothing running repeats
+ * the last command.
+ */
+function onKeyDown(e: KeyboardEvent) {
+  if (!editing || e.isComposing) return
+  const target = e.target instanceof Element ? e.target : null
+  // The engine leaves focus in the command line after every command, where
+  // Ctrl+Z and Delete would only edit the text. With the line empty they act
+  // on the drawing, as in AutoCAD.
+  if (target instanceof HTMLInputElement && target.matches(CLI_INPUT) && !target.value && !isCommandRunning()) {
+    const mod = e.ctrlKey || e.metaKey
+    if (mod && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      void runCommand(e.code === 'KeyY' || e.shiftKey ? 'redo' : 'undo')
+      return
+    }
+    if (!mod && e.key === 'Delete' && selectionCount() > 0) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      void runCommand('erase')
+      return
+    }
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (target?.matches(CLI_INPUT)) {
+    if (e.key === ' ') {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))
+    }
+    return
+  }
+  if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+  if (isCommandRunning()) return
+  if ((e.key === 'Enter' || e.key === ' ') && lastCommand) {
+    e.preventDefault()
+    void runCommand(lastCommand)
+    return
+  }
+  if (e.key.length === 1 && e.key.trim()) typeIntoCommandLine(e)
+}
+
+function typeIntoCommandLine(e: KeyboardEvent) {
+  const box = document.querySelector<HTMLInputElement>(CLI_INPUT)
+  if (box && box.offsetParent !== null) {
+    // Focus moves before the key is handled, so the letter lands in the box.
+    box.focus()
+    return
+  }
+  // Hidden (an iPad with a keyboard): show it, then put the first letter in.
+  e.preventDefault()
+  setCommandLineVisible(true)
+  requestAnimationFrame(() => {
+    const shown = document.querySelector<HTMLInputElement>(CLI_INPUT)
+    if (!shown) return
+    shown.focus()
+    shown.value += e.key
+    shown.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
+/** Right-click on the drawing with nothing running repeats the last command. */
+function onContextMenu(e: MouseEvent) {
+  if (!editing || isCommandRunning() || !lastCommand) return
+  if (!(e.target instanceof HTMLCanvasElement)) return
+  e.preventDefault()
+  void runCommand(lastCommand)
 }
 
 function toolButton(tool: Tool) {
@@ -186,6 +285,7 @@ export function enterEdit() {
   setEditable(true)
   editing = true
   dirty = false
+  if (usesMouse()) setCommandLineVisible(true)
   $('app').classList.add('editing')
   $('edit-bar').hidden = false
   $('btn-edit').classList.add('on')
@@ -194,6 +294,7 @@ export function enterEdit() {
 
 function finish() {
   setEditable(false)
+  setCommandLineVisible(false)
   editing = false
   dirty = false
   markActive(null)
@@ -235,6 +336,8 @@ export const editedBaseName = (base: string) => (/_수정$/.test(base) ? base : 
 export async function saveEdits(): Promise<boolean> {
   if (!editing) return false
   cancelCommand()
+  const fileName = `${editedBaseName(host.docName())}.dxf`
+  if (!(await host.prepareSave(fileName))) return false
   let dxf: ReturnType<typeof drawingToDxf>
   try {
     dxf = drawingToDxf()
@@ -255,7 +358,7 @@ export async function saveEdits(): Promise<boolean> {
     )
     if (go !== 'save') return false
   }
-  const saved = await host.save(dxf.blob, `${editedBaseName(host.docName())}.dxf`)
+  const saved = await host.save(dxf.blob, fileName)
   if (saved) {
     dirty = false
     refreshState()

@@ -184,6 +184,15 @@ export function cancelCommand() {
   void AcApDocManager.instance.commandManager.cancelActive()
 }
 
+export const isCommandRunning = () => !!AcApDocManager.instance.commandManager.activeCommand
+export const selectionCount = () => AcApDocManager.instance.curView.selectionSet.count
+
+/** The engine's AutoCAD-style command line, where L, C, M, CO... are typed. */
+export function setCommandLineVisible(on: boolean) {
+  AcApSettingManager.instance.apply({ isShowCommandLine: on }, { persist: false })
+  document.body.classList.toggle('cli-on', on)
+}
+
 export function undoState() {
   const tm = currentDatabase()?.transactionManager
   return { undo: !!tm?.canUndo(), redo: !!tm?.canRedo() }

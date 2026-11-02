@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
-import { VitePWA } from 'vite-plugin-pwa'
+import { type ManifestOptions, VitePWA } from 'vite-plugin-pwa'
 
 const modulePath = (p: string) =>
   fileURLToPath(new URL(`./node_modules/${p}`, import.meta.url)).replace(/\\/g, '/')
@@ -57,8 +57,17 @@ export default defineConfig({
             type: 'image/png',
             purpose: 'maskable'
           }
-        ]
-      },
+        ],
+        // Installed with Edge / Chrome on Windows, the app shows up under
+        // "연결 프로그램" for DWG and DXF; a second file reuses the open window.
+        file_handlers: [
+          {
+            action: './',
+            accept: { 'image/vnd.dwg': ['.dwg'], 'image/vnd.dxf': ['.dxf'] }
+          }
+        ],
+        launch_handler: { client_mode: 'focus-existing' }
+      } as ManifestOptions,
       workbox: {
         globPatterns: [
           '**/*.{js,css,html,wasm,png,svg,ico,woff,woff2,ttf,shx,json,dxf,webmanifest}'

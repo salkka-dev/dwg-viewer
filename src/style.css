@@ -892,6 +892,45 @@ svg .fill {
   pointer-events: none;
 }
 
+/* The engine's command line (PC), in the app's colors */
+.ml-cli-container {
+  --ml-ui-bg: var(--panel);
+  --ml-ui-border: var(--line);
+  --ml-ui-text: var(--text);
+  --ml-ui-text-muted: var(--text);
+  --ml-ui-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  --ml-ui-danger: var(--danger);
+  width: min(760px, calc(100% - 20px));
+}
+
+.ml-cli-bar {
+  height: 36px;
+  border-radius: 10px;
+}
+
+.ml-cli-prompt {
+  color: var(--lime);
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+.ml-cli-text {
+  font-family: var(--font);
+  font-size: 14px;
+}
+
+.ml-cli-text::placeholder {
+  color: var(--muted);
+}
+
+.ml-cli-option {
+  color: var(--cyan-hi);
+}
+
+.cli-on .toast {
+  bottom: calc(132px + env(safe-area-inset-bottom));
+}
+
 .edit-bar {
   flex: none;
   display: flex;

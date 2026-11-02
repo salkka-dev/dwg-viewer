@@ -6,6 +6,14 @@ import { registerSW } from 'virtual:pwa-register'
 
 import { DriveAuthError, driveConfigured, saveFile, signedIn, signIn, takeSignInResult } from './drive'
 import { closeDriveSheet, initDriveUi, openDriveSheet } from './drive-ui'
+import {
+  canUseFileHandles,
+  ensureWritable,
+  onLaunchFiles,
+  pickDrawingHandle,
+  pickSaveHandle,
+  writeFile
+} from './files'
 import { enterEdit, hasUnsavedEdits, initEdit, isEditing, leaveEdit, resetEdit, saveEdits } from './edit'
 import {
   currentDatabase,
@@ -65,7 +73,10 @@ const state = {
   // The drawing as it was opened, for "저장하지 않고 끝내기" and Drive saves.
   blob: undefined as Blob | undefined,
   fileName: '',
-  source: { kind: 'device' } as DocSource
+  source: { kind: 'device' } as DocSource,
+  // PC only: the opened file on disk, and where 저장 writes without asking again.
+  handle: undefined as FileSystemFileHandle | undefined,
+  saveHandle: undefined as FileSystemFileHandle | undefined
 }
 
 const DARK_BG = 0x0e1016
@@ -81,6 +92,8 @@ let opening = false
 interface OpenOptions {
   recent?: RecentFile
   source?: DocSource
+  /** PC: the file on disk, so saving can start in its folder. */
+  handle?: FileSystemFileHandle
   /** The caller already dealt with unsaved edits. */
   force?: boolean
 }
@@ -136,6 +149,9 @@ async function openBlob(blob: Blob, name: string, opts: OpenOptions = {}) {
     state.blob = blob
     state.fileName = fileName
     state.source = opts.source ?? opts.recent?.source ?? { kind: 'device' }
+    state.handle = opts.handle
+    // Reopening an edited copy (…_수정.dxf) keeps saving into that same file.
+    state.saveHandle = opts.handle && /_수정\.dxf$/i.test(fileName) ? opts.handle : undefined
     app.classList.remove('no-doc')
     $('doc-title').textContent = state.docName
     document.title = `${state.docName} - 도면 뷰어`
@@ -180,6 +196,18 @@ function settleAfterOpen() {
 function pickFile() {
   if (!state.ready) return
   $('open-sheet').hidden = true
+  if (canUseFileHandles()) {
+    // PC: the native dialog also gives a handle, so edits can be saved next to the file.
+    pickDrawingHandle()
+      .then(async handle => {
+        if (handle) await openBlob(await handle.getFile(), handle.name, { handle })
+      })
+      .catch(err => {
+        console.error(err)
+        toast('파일을 열지 못했어요', true)
+      })
+    return
+  }
   fileInput.value = ''
   fileInput.click()
 }
@@ -199,9 +227,42 @@ async function browseDrive() {
 
 /* ---------- saving edits ---------- */
 
+/**
+ * PC: the first 저장 opens the save dialog in the original's folder; later
+ * saves (and Ctrl+S) write to that file without asking. Runs before the DXF is
+ * built because the dialog needs the click or key press that started it.
+ */
+async function prepareSave(fileName: string): Promise<boolean> {
+  if (state.source.kind !== 'device' || !canUseFileHandles()) return true
+  try {
+    if (state.saveHandle) return await ensureWritable(state.saveHandle)
+    const handle = await pickSaveHandle(fileName, state.handle)
+    if (!handle) return false
+    state.saveHandle = handle
+    return true
+  } catch (err) {
+    console.error(err)
+    state.saveHandle = undefined
+    toast('저장 위치를 열지 못했어요', true)
+    return false
+  }
+}
+
 async function saveEdited(blob: Blob, fileName: string): Promise<boolean> {
   const source = state.source
   if (source.kind === 'drive') return saveEditedToDrive(blob, fileName, source)
+  if (state.saveHandle) {
+    try {
+      await writeFile(state.saveHandle, blob)
+      toast(`${state.saveHandle.name} 파일에 저장했어요`)
+      return true
+    } catch (err) {
+      console.error(err)
+      state.saveHandle = undefined
+      toast('파일에 쓰지 못했어요. 저장을 다시 눌러 다른 위치를 골라 주세요', true)
+      return false
+    }
+  }
   return shareOrDownload([new File([blob], fileName, { type: 'application/dxf' })])
 }
 
@@ -725,6 +786,11 @@ function bindUi() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
       e.preventDefault()
       pickFile()
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      // Never the browser's "save page" dialog.
+      e.preventDefault()
+      if (isEditing()) void saveEdits()
+      else if (currentDatabase()) toast('편집을 켠 다음 저장할 수 있어요')
     } else if (e.key === 'Escape') {
       closePdfSheet()
       toggleLayerPanel(false)
@@ -760,7 +826,16 @@ function bindUi() {
     dragDepth = 0
     $('drop-hint').hidden = true
     const file = e.dataTransfer?.files?.[0]
-    if (file) void openBlob(file, file.name)
+    if (!file) return
+    // Chrome / Edge also hand over the file on disk; it must be asked for during the drop.
+    const item = [...(e.dataTransfer?.items ?? [])].find(i => i.kind === 'file') as
+      | (DataTransferItem & { getAsFileSystemHandle?(): Promise<FileSystemHandle | null> })
+      | undefined
+    const pending = item?.getAsFileSystemHandle?.().catch(() => null)
+    void (async () => {
+      const handle = await pending
+      await openBlob(file, file.name, { handle: handle?.kind === 'file' ? (handle as FileSystemFileHandle) : undefined })
+    })()
   })
 }
 
@@ -782,10 +857,17 @@ async function boot() {
     watchViewSize()
     initEdit({
       docName: () => state.docName,
+      prepareSave,
       save: saveEdited,
       revert: async () => {
-        if (state.blob) await openBlob(state.blob, state.fileName, { force: true, source: state.source })
+        if (state.blob) {
+          await openBlob(state.blob, state.fileName, { force: true, source: state.source, handle: state.handle })
+        }
       }
+    })
+    // Installed on Windows: DWG / DXF opened from Explorer arrive here.
+    onLaunchFiles(handle => {
+      void handle.getFile().then(file => openBlob(file, handle.name, { handle }))
     })
   } catch (err) {
     console.error(err)
