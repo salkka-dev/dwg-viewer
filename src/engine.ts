@@ -105,10 +105,24 @@ export function listLayouts(db: AcDbDatabase): LayoutInfo[] {
   return layouts
 }
 
+/**
+ * Switches the layout tab. The engine frames a layout's first visit around its
+ * viewports only, which cuts off title blocks drawn on the sheet around them,
+ * so its own first zoom is skipped and the caller frames the whole sheet.
+ */
 export function switchLayout(btrId: string) {
+  AcApDocManager.instance.curView.markLayoutAsInitialized(btrId)
   acdbHostApplicationServices().layoutManager.setCurrentLayoutBtrId(btrId)
 }
 
+/** Frames everything on the current layout once its entities finish loading. */
 export function zoomExtents() {
   AcApDocManager.instance.curView.zoomToFitDrawing()
+}
+
+/** Runs `fn` once the current layout has no entities left to convert. */
+export function whenViewIdle(fn: () => void) {
+  const view = AcApDocManager.instance.curView
+  const tick = () => (view.isProcessingEntities ? setTimeout(tick, 100) : fn())
+  tick()
 }

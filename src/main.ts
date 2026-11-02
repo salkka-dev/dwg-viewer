@@ -11,6 +11,7 @@ import {
   listLayouts,
   openDrawing,
   switchLayout,
+  whenViewIdle,
   zoomExtents
 } from './engine'
 import { collectPages, type ExportPage, layoutHasContent } from './pages'
@@ -140,6 +141,7 @@ async function openBlob(blob: Blob, name: string, recent?: RecentFile) {
     document.title = `${state.docName} - 도면 뷰어`
     applyBackground()
     watchLayers()
+    resetFitState()
     renderLayouts()
     if (recent) void touchRecent(recent)
     else void rememberFile(fileName, blob)
@@ -209,12 +211,85 @@ function renderLayouts() {
       textContent: layout.isModel ? '모형' : layout.name,
       title: layout.name
     })
-    chip.addEventListener('click', () => {
-      switchLayout(layout.btrId)
-      renderLayouts()
-    })
+    chip.addEventListener('click', () => showLayout(layout.btrId))
     bar.append(chip)
   }
+}
+
+/** Switches tabs; a layout seen for the first time is framed as a whole sheet. */
+function showLayout(btrId: string, fit = true) {
+  const db = currentDatabase()
+  if (!db) return
+  const firstVisit = !visited.has(btrId)
+  visited.add(btrId)
+  if (db.currentSpaceId !== btrId) switchLayout(btrId)
+  renderLayouts()
+  if (!fit) return
+  if (firstVisit) fitView()
+  else refitIfStale()
+}
+
+/* ---------- view fitting ---------- */
+
+// Tabs whose camera still shows the whole drawing, with the stage size it was
+// framed for ('' = framed by the engine at open). Rotating the iPad or resizing
+// a Split View re-frames them; after a pinch or pan the user's zoom is kept.
+const fitted = new Map<string, string>()
+const visited = new Set<string>()
+
+const stageSize = () => {
+  const host = $('cad-host')
+  return `${host.clientWidth}x${host.clientHeight}`
+}
+
+function resetFitState() {
+  fitted.clear()
+  visited.clear()
+  const id = currentDatabase()?.currentSpaceId
+  if (id) {
+    visited.add(id)
+    fitted.set(id, '')
+  }
+}
+
+function fitView() {
+  zoomExtents()
+  const id = currentDatabase()?.currentSpaceId
+  if (id) fitted.set(id, stageSize())
+}
+
+function refitIfStale() {
+  const id = currentDatabase()?.currentSpaceId
+  const size = id ? fitted.get(id) : undefined
+  if (size !== undefined && size !== stageSize()) fitView()
+}
+
+function watchViewSize() {
+  const host = $('cad-host')
+  const userMoved = () => {
+    const id = currentDatabase()?.currentSpaceId
+    if (id) fitted.delete(id)
+  }
+  let start: { x: number; y: number } | null = null
+  host.addEventListener('pointerdown', e => (start = { x: e.clientX, y: e.clientY }), { capture: true })
+  host.addEventListener(
+    'pointermove',
+    e => {
+      if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) userMoved()
+    },
+    { capture: true }
+  )
+  for (const type of ['pointerup', 'pointercancel']) {
+    host.addEventListener(type, () => (start = null), { capture: true })
+  }
+  host.addEventListener('wheel', userMoved, { capture: true, passive: true })
+
+  // The engine resizes its canvas first; re-frame once the size settles.
+  let timer = 0
+  new ResizeObserver(() => {
+    clearTimeout(timer)
+    timer = window.setTimeout(refitIfStale, 150)
+  }).observe(host)
 }
 
 /* ---------- background ---------- */
@@ -344,17 +419,18 @@ function updateSelectionCount() {
 }
 
 function peekPage(page: ExportPage) {
-  const db = currentDatabase()
-  if (!db) return
+  if (!currentDatabase()) return
   $('pdf-sheet').hidden = true
-  if (db.currentSpaceId !== page.btrId) switchLayout(page.btrId)
-  renderLayouts()
-  const view = AcApDocManager.instance.curView
-  if (page.box) {
-    const box = new AcGeBox2d(new AcGePoint2d(page.box.minX, page.box.minY), new AcGePoint2d(page.box.maxX, page.box.maxY))
-    setTimeout(() => view.zoomTo(box, 1.05), 60)
+  showLayout(page.btrId, false)
+  const frame = page.box
+  if (frame) {
+    const box = new AcGeBox2d(new AcGePoint2d(frame.minX, frame.minY), new AcGePoint2d(frame.maxX, frame.maxY))
+    whenViewIdle(() => {
+      AcApDocManager.instance.curView.zoomTo(box, 1.05)
+      fitted.delete(page.btrId)
+    })
   } else {
-    setTimeout(() => zoomExtents(), 60)
+    fitView()
   }
   toast('PDF 버튼을 누르면 변환 창으로 돌아가요')
 }
@@ -505,7 +581,7 @@ function closePanels() {
 function bindUi() {
   $('btn-open').addEventListener('click', pickFile)
   $('btn-open-home').addEventListener('click', pickFile)
-  $('btn-fit').addEventListener('click', () => zoomExtents())
+  $('btn-fit').addEventListener('click', fitView)
   $('btn-layers').addEventListener('click', () => toggleLayerPanel())
   $('layer-close').addEventListener('click', () => toggleLayerPanel(false))
   $('btn-bg').addEventListener('click', () => {
@@ -605,6 +681,7 @@ async function boot() {
     await initEngine($('cad-host'))
     state.ready = true
     applyBackground()
+    watchViewSize()
   } catch (err) {
     console.error(err)
     toast('뷰어를 시작하지 못했어요. 새로고침해 주세요', true)
