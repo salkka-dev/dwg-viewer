@@ -1,0 +1,10 @@
+# Fonts, images and drawing templates must stay byte-identical (no EOL conversion).
+*.shx binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.png binary
+*.ico binary
+*.wasm binary
+*.dwg binary
+*.dxf binary

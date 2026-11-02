@@ -1,0 +1,36 @@
+{
+  "name": "dwg-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/copy-assets.mjs",
+    "predev": "npm run assets",
+    "dev": "vite",
+    "prebuild": "npm run assets",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mlightcad/cad-pdf-plugin": "1.7.8-preview.6",
+    "@mlightcad/cad-simple-viewer": "1.7.8-preview.6",
+    "@mlightcad/data-model": "1.15.20",
+    "@mlightcad/libredwg-converter": "3.15.20",
+    "@mlightcad/mtext-parser": "1.5.5",
+    "@mlightcad/mtext-renderer": "0.13.6",
+    "@mlightcad/pdf-renderer": "1.7.8-preview.6",
+    "@mlightcad/three-renderer": "1.7.8-preview.6",
+    "fflate": "0.8.3",
+    "lodash-es": "4.17.21",
+    "pdf-lib": "1.17.1",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "6.4.3",
+    "vite-plugin-pwa": "2.0.0",
+    "workbox-window": "7.4.1"
+  },
+  "description": "DWG 도면 뷰어 + 페이지별 PDF 변환 (아이패드 PWA)",
+  "license": "GPL-3.0-or-later"
+}

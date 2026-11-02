@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
+    "types": ["vite/client", "vite-plugin-pwa/client"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "allowJs": false,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "pdf-renderer-lib/*": ["node_modules/@mlightcad/pdf-renderer/lib/*"],
+      "cad-pdf-plugin-lib/*": ["node_modules/@mlightcad/cad-pdf-plugin/lib/*"]
+    }
+  },
+  "include": ["src"]
+}
