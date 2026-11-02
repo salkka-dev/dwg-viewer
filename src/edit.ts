@@ -7,15 +7,17 @@ import {
   cancelCommand,
   currentLayer,
   drawingToDxf,
+  insertableBlocks,
   isCommandRunning,
   runCommand,
+  runCommandScript,
   selectionCount,
   setCommandLineVisible,
   setCurrentLayer,
   setEditable,
   undoState
 } from './engine'
-import { $, ask, el, icon, toast } from './ui'
+import { $, ask, closeMenu, el, icon, menuOpenFor, openMenu, toast } from './ui'
 
 export interface EditHost {
   /** Base name of the open drawing, without extension. */
@@ -36,10 +38,16 @@ const CLI_INPUT = '.ml-cli-text'
 const NO_REPEAT = new Set(['undo', 'redo', 'select', 'zoom', 'pan', 'regen'])
 const usesMouse = () => matchMedia('(pointer: fine)').matches
 
-interface Tool {
+export interface Tool {
   cmd: string
   label: string
   icon: string
+}
+
+interface ToolGroup {
+  label: string
+  icon: string
+  tools: Tool[]
 }
 
 const HISTORY: Tool[] = [
@@ -53,10 +61,59 @@ const DRAW: Tool[] = [
   { cmd: 'rectang', label: '사각형', icon: '<rect x="4" y="6" width="16" height="12" rx="1"/>' },
   { cmd: 'circle', label: '원', icon: '<circle cx="12" cy="12" r="8"/>' },
   { cmd: 'arc', label: '호', icon: '<path d="M4 18a8 8 0 0 1 16 0"/>' },
-  { cmd: 'mtext', label: '글자', icon: '<path d="M5 7V4h14v3M12 4v16M9 20h6"/>' },
-  { cmd: 'dimlinear', label: '치수', icon: '<path d="M4 7v10M20 7v10M4 12h16"/><path d="m7 9-3 3 3 3M17 9l3 3-3 3"/>' },
-  { cmd: 'dimaligned', label: '사선 치수', icon: '<path d="M5 17 17 5"/><path d="m3 15 4 4M15 3l4 4"/>' },
+  { cmd: 'mtext', label: '글자', icon: '<path d="M5 7V4h14v3M12 4v16M9 20h6"/>' }
+]
+
+const DIM_LINEAR = '<path d="M4 7v10M20 7v10M4 12h16"/><path d="m7 9-3 3 3 3M17 9l3 3-3 3"/>'
+
+const MORE_DRAW: ToolGroup = {
+  label: '더 그리기',
+  icon: '<path d="M12 5v14M5 12h14"/>',
+  tools: [
+    { cmd: 'ellipse', label: '타원', icon: '<ellipse cx="12" cy="12" rx="9" ry="5.5"/>' },
+    { cmd: 'spline', label: '스플라인', icon: '<path d="M3 16c2.5-7 5.5-7 8.5 0s6 7 9.5 0"/>' },
+    { cmd: 'polygon', label: '다각형', icon: '<path d="m12 3 8.5 6.2-3.2 10H6.7L3.5 9.2z"/>' },
+    { cmd: 'point', label: '점', icon: '<circle cx="12" cy="12" r="2.2" class="fill"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/>' },
+    { cmd: '-hatch', label: '해치', icon: '<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 12 12 4M4 20 20 4M12 20l8-8"/>' },
+    { cmd: 'xline', label: '무한선', icon: '<path d="M2 20 22 4"/><circle cx="12" cy="12" r="1.8" class="fill"/>' },
+    { cmd: 'ray', label: '광선', icon: '<path d="M5 19 21 5"/><circle cx="5" cy="19" r="1.8" class="fill"/>' }
+  ]
+}
+
+const DIMS: ToolGroup = {
+  label: '치수',
+  icon: DIM_LINEAR,
+  tools: [
+    { cmd: 'dimlinear', label: '선형 치수', icon: DIM_LINEAR },
+    { cmd: 'dimaligned', label: '사선 치수', icon: '<path d="M5 17 17 5"/><path d="m3 15 4 4M15 3l4 4"/>' },
+    { cmd: 'dimradius', label: '반지름', icon: '<circle cx="12" cy="12" r="8"/><path d="m12 12 6-5"/>' },
+    { cmd: 'dimdiameter', label: '지름', icon: '<circle cx="12" cy="12" r="8"/><path d="M6.3 17.7 17.7 6.3"/>' },
+    { cmd: 'dimangular', label: '각도', icon: '<path d="M4 20h16M4 20 16 6"/><path d="M11 20a7 7 0 0 0-2-4.8"/>' },
+    { cmd: 'dimarc', label: '호 길이', icon: '<path d="M4 18a8 8 0 0 1 16 0"/><path d="M7 11a6 6 0 0 1 10 0"/>' },
+    { cmd: 'dimordinate', label: '좌표 치수', icon: '<path d="M5 19V5M5 19h14"/><path d="M5 11h6M13 19v-6"/>' },
+    { cmd: 'dimcontinue', label: '이어서 치수', icon: '<path d="M3 8v8M12 8v8M21 8v8M3 12h18"/>' },
+    { cmd: 'dimbaseline', label: '기준선 치수', icon: '<path d="M3 6v12M12 9v9M21 12v6M3 10h9M3 14h18"/>' }
+  ]
+}
+
+const NOTE: Tool[] = [
   { cmd: 'revcloud', label: '구름', icon: '<path d="M7 18a3 3 0 0 1-.6-5.9 4.5 4.5 0 0 1 8.5-2A3.8 3.8 0 1 1 17 18z"/>' }
+]
+
+const BLOCK_ICON = '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><path d="M11 7h4a2 2 0 0 1 2 2v4"/>'
+
+// Layer commands that act on the layer of a tapped object, AutoCAD's LAY* tools.
+const LAYER_TOOLS: Tool[] = [
+  { cmd: 'laycur', label: '고른 객체를 그릴 레이어로', icon: '' },
+  { cmd: 'layoff', label: '객체 레이어 끄기', icon: '' },
+  { cmd: 'layfrz', label: '객체 레이어 동결', icon: '' },
+  { cmd: 'laylck', label: '객체 레이어 잠그기', icon: '' },
+  { cmd: 'layulk', label: '객체 레이어 잠금 풀기', icon: '' },
+  { cmd: 'layiso', label: '고른 레이어만 보기', icon: '' },
+  { cmd: 'layuniso', label: '다시 모두 보기', icon: '' },
+  { cmd: 'layon', label: '모든 레이어 켜기', icon: '' },
+  { cmd: 'laythw', label: '동결 모두 풀기', icon: '' },
+  { cmd: 'layerp', label: '직전 레이어 상태로', icon: '' }
 ]
 
 const MODIFY: Tool[] = [
@@ -84,6 +141,11 @@ export function initEdit(h: EditHost) {
     ...HISTORY.map(toolButton),
     el('span', { className: 'edit-sep' }),
     ...DRAW.map(toolButton),
+    groupButton(MORE_DRAW),
+    el('span', { className: 'edit-sep' }),
+    groupButton(DIMS),
+    ...NOTE.map(toolButton),
+    blockButton(),
     el('span', { className: 'edit-sep' }),
     ...MODIFY.map(toolButton)
   )
@@ -188,6 +250,13 @@ function onContextMenu(e: MouseEvent) {
   void runCommand(lastCommand)
 }
 
+export function start(cmd: string) {
+  runCommand(cmd).catch(err => {
+    console.error(err)
+    toast('이 기능을 시작하지 못했어요', true)
+  })
+}
+
 function toolButton(tool: Tool) {
   const b = el('button', { className: 'edit-tool', type: 'button', title: tool.label }, [
     icon(tool.icon),
@@ -199,12 +268,76 @@ function toolButton(tool: Tool) {
       cancelCommand()
       return
     }
-    runCommand(tool.cmd).catch(err => {
-      console.error(err)
-      toast('이 기능을 시작하지 못했어요', true)
-    })
+    start(tool.cmd)
   })
   return b
+}
+
+/** One button for a family of tools (dimensions, more shapes); opens a list. */
+function groupButton(group: ToolGroup) {
+  const b = el('button', { className: 'edit-tool group-tool', type: 'button', title: group.label }, [
+    icon(group.icon),
+    el('span', { textContent: `${group.label} ▾` })
+  ])
+  b.dataset.cmds = group.tools.map(t => t.cmd).join(' ')
+  b.addEventListener('click', () => {
+    if (menuOpenFor(b)) {
+      closeMenu()
+      return
+    }
+    openMenu(
+      b,
+      group.tools.map(t => ({ label: t.label, icon: t.icon, run: () => start(t.cmd) }))
+    )
+  })
+  return b
+}
+
+function blockButton() {
+  const b = el('button', { className: 'edit-tool', type: 'button', title: '블록 넣기' }, [
+    icon(BLOCK_ICON),
+    el('span', { textContent: '블록' })
+  ])
+  b.dataset.cmd = '-insert'
+  b.addEventListener('click', openBlockSheet)
+  return b
+}
+
+/** Lists the drawing's blocks; the chosen one is placed with the engine's -INSERT. */
+function openBlockSheet() {
+  const blocks = insertableBlocks()
+  const close = () => backdrop.remove()
+  const rows = blocks.map(block => {
+    const row = el('button', { className: 'layer-row pick', type: 'button' }, [
+      icon(BLOCK_ICON),
+      el('span', { className: 'layer-name', textContent: block.name }),
+      el('span', { className: 'pick-mark muted', textContent: `객체 ${block.entities}개` })
+    ])
+    row.addEventListener('click', () => {
+      close()
+      runCommandScript(`-insert\n${block.name}`).catch(err => {
+        console.error(err)
+        toast('블록을 넣지 못했어요', true)
+      })
+    })
+    return el('li', {}, [row])
+  })
+  const backdrop = el('div', { className: 'sheet-backdrop' }, [
+    el('div', { className: 'sheet layer-pick' }, [
+      el('header', { className: 'sheet-head' }, [el('h2', { textContent: '블록 넣기' })]),
+      el('p', {
+        className: 'hint pick-hint',
+        textContent: blocks.length
+          ? '넣을 블록을 고른 뒤 놓을 자리를 찍으세요. 축척과 회전은 확인을 누르면 원래대로 들어가요.'
+          : '이 도면에는 넣을 수 있는 블록이 없어요.'
+      }),
+      el('ul', { className: 'layer-list' }, rows)
+    ])
+  ])
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) close()
+  })
+  document.body.append(backdrop)
 }
 
 function layerButton() {
@@ -219,8 +352,10 @@ function layerButton() {
 
 function markActive(globalName: string | null) {
   const name = globalName?.toLowerCase() ?? ''
+  const show = name !== 'undo' && name !== 'redo' && name !== ''
   for (const b of $('edit-bar').querySelectorAll<HTMLButtonElement>('.edit-tool')) {
-    b.classList.toggle('active', b.dataset.cmd === name && name !== 'undo' && name !== 'redo')
+    const mine = b.dataset.cmd === name || (b.dataset.cmds?.split(' ').includes(name) ?? false)
+    b.classList.toggle('active', show && mine)
   }
 }
 
@@ -266,9 +401,20 @@ function pickLayer(): Promise<void> {
       })
       return el('li', {}, [row])
     })
+    const tools = LAYER_TOOLS.map(tool => {
+      const b = el('button', { className: 'ghost-btn', type: 'button', textContent: tool.label })
+      b.addEventListener('click', () => {
+        close()
+        start(tool.cmd)
+      })
+      return b
+    })
     const backdrop = el('div', { className: 'sheet-backdrop' }, [
       el('div', { className: 'sheet layer-pick' }, [
-        el('header', { className: 'sheet-head' }, [el('h2', { textContent: '그릴 레이어' })]),
+        el('header', { className: 'sheet-head' }, [el('h2', { textContent: '레이어' })]),
+        el('p', { className: 'sheet-section', textContent: '객체로 레이어 다루기' }),
+        el('div', { className: 'layer-tools' }, tools),
+        el('p', { className: 'sheet-section', textContent: '그릴 레이어' }),
         el('p', { className: 'hint pick-hint', textContent: '새로 그리는 선, 글자, 치수가 이 레이어에 들어가요.' }),
         el('ul', { className: 'layer-list' }, rows)
       ])

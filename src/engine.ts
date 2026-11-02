@@ -180,6 +180,31 @@ export async function runCommand(name: string) {
   mgr.sendStringToExecute(name)
 }
 
+/**
+ * Runs a command with its first answers filled in, one per line
+ * (`-insert\nDOOR` asks only for the insertion point and what follows).
+ */
+export async function runCommandScript(script: string) {
+  const mgr = AcApDocManager.instance
+  if (mgr.commandManager.activeCommand) await mgr.commandManager.cancelActive()
+  await mgr.executeCommandString(script)
+}
+
+/** Named blocks of the drawing that can be inserted (no layouts, xrefs or anonymous ones). */
+export function insertableBlocks(): { name: string; entities: number }[] {
+  const db = currentDatabase()
+  if (!db) return []
+  const blocks: { name: string; entities: number }[] = []
+  for (const record of db.tables.blockTable.newIterator()) {
+    const name = record.name
+    if (!name || name.startsWith('*') || record.isModelSapce || record.isPaperSapce || record.isXref) continue
+    let entities = 0
+    for (const _ of record.newIterator()) entities++
+    if (entities > 0) blocks.push({ name, entities })
+  }
+  return blocks.sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
 export function cancelCommand() {
   void AcApDocManager.instance.commandManager.cancelActive()
 }

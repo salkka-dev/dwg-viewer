@@ -104,6 +104,69 @@ export async function shareOrDownload(files: File[], zipName?: string): Promise<
   return true
 }
 
+export interface MenuItem {
+  label: string
+  icon?: string
+  run: () => void
+}
+
+let openPopup: { anchor: HTMLElement; cleanup: () => void } | undefined
+
+export function closeMenu() {
+  openPopup?.cleanup()
+  openPopup = undefined
+}
+
+/** Drop-down list under a button. Closes on a choice, a tap elsewhere or Escape. */
+export function openMenu(anchor: HTMLElement, items: MenuItem[], note?: string) {
+  closeMenu()
+  const menu = el('div', { className: 'pop-menu' })
+  menu.setAttribute('role', 'menu')
+  for (const item of items) {
+    const b = el('button', { className: 'pop-item', type: 'button' }, [
+      ...(item.icon ? [icon(item.icon)] : []),
+      el('span', { textContent: item.label })
+    ])
+    b.setAttribute('role', 'menuitem')
+    b.addEventListener('click', () => {
+      closeMenu()
+      item.run()
+    })
+    menu.append(b)
+  }
+  if (note) menu.append(el('p', { className: 'pop-note', textContent: note }))
+  document.body.append(menu)
+
+  const r = anchor.getBoundingClientRect()
+  const left = Math.min(Math.max(8, r.left), innerWidth - menu.offsetWidth - 8)
+  let top = r.bottom + 6
+  if (top + menu.offsetHeight > innerHeight - 8) top = Math.max(8, r.top - menu.offsetHeight - 6)
+  menu.style.left = `${left}px`
+  menu.style.top = `${top}px`
+
+  const onOutside = (e: PointerEvent) => {
+    if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node)) closeMenu()
+  }
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeMenu()
+  }
+  document.addEventListener('pointerdown', onOutside, true)
+  window.addEventListener('keydown', onKey)
+  anchor.classList.add('menu-open')
+  openPopup = {
+    anchor,
+    cleanup: () => {
+      menu.remove()
+      anchor.classList.remove('menu-open')
+      document.removeEventListener('pointerdown', onOutside, true)
+      window.removeEventListener('keydown', onKey)
+    }
+  }
+}
+
+/** True while the given button's menu is showing (a second tap closes it). */
+export const menuOpenFor = (anchor: HTMLElement) => openPopup?.anchor === anchor
+
 export interface Choice<T extends string> {
   value: T
   label: string

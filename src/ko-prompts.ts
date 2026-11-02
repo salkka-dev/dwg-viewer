@@ -65,7 +65,13 @@ export const KO_PROMPTS = {
       erase: { prompt: '지울 객체를 고르고 확인을 누르세요' },
       move: { prompt: '옮길 객체를 고르고 확인을 누르세요' },
       copy: { prompt: '복사할 객체를 고르고 확인을 누르세요' },
-      rotate: { prompt: '회전할 객체를 고르고 확인을 누르세요' }
+      rotate: { prompt: '회전할 객체를 고르고 확인을 누르세요' },
+      laycur: { prompt: '현재 레이어로 옮길 객체를 고르고 확인을 누르세요' },
+      layfrz: { prompt: '동결할 레이어의 객체를 고르세요' },
+      layiso: { prompt: '남겨 둘 레이어의 객체를 고르고 확인을 누르세요' },
+      laylck: { prompt: '잠글 레이어의 객체를 고르세요' },
+      layoff: { prompt: '끌 레이어의 객체를 고르세요' },
+      layulk: { prompt: '잠금을 풀 레이어의 객체를 고르세요' }
     }
   },
   jig: {
@@ -263,6 +269,262 @@ export const KO_PROMPTS = {
       newAngle: '새 각도를 정하세요',
       keywords: { copy: kw('복사(C)'), reference: kw('기준(R)'), points: kw('점(P)') },
       invalid: { referencePoints: '기준점 두 개가 서로 달라야 해요.' }
+    },
+    ellipse: {
+      axisEndpointOrOptions: '타원 축의 끝점을 찍거나 옵션을 고르세요',
+      arcAxisEndpointOrCenter: '타원호 축의 끝점을 찍거나 옵션을 고르세요',
+      center: '타원의 중심을 찍으세요',
+      firstAxisEndpoint: '축의 끝점을 찍으세요',
+      secondAxisEndpoint: '축의 다른 끝점을 찍으세요',
+      otherAxisOrRotation: '다른 축까지의 거리를 정하거나 옵션을 고르세요',
+      rotationAngle: '장축을 기준으로 한 회전 각도를 정하세요',
+      arcStartAngle: '타원호의 시작 각도를 정하세요',
+      arcEndAngle: '타원호의 끝 각도를 정하세요',
+      keywords: { arc: kw('호(A)'), center: kw('중심(C)'), rotation: kw('회전(R)') },
+      invalid: {
+        axis: '축 길이는 0보다 커야 해요.',
+        otherAxis: '다른 축까지의 거리는 0보다 커야 해요.',
+        rotation: '이 회전 각도로는 단축이 0이 돼요.'
+      }
+    },
+    spline: {
+      firstPoint: '첫 점을 찍으세요',
+      nextPoint: '다음 점을 찍으세요. 끝내려면 확인',
+      firstPointWithOptions: '첫 점을 찍거나 옵션을 고르세요',
+      nextPointWithFitOptions: '다음 점을 찍거나 옵션을 고르세요. 끝내려면 확인',
+      nextPointWithCvOptions: '다음 조정점을 찍거나 옵션을 고르세요. 끝내려면 확인',
+      methodPrompt: '스플라인 그리는 방식을 고르세요',
+      knotsPrompt: '매듭 방식을 고르세요',
+      degreePrompt: '스플라인 차수를 입력하세요',
+      keywords: {
+        method: kw('방식(M)'),
+        fit: kw('맞춤점(F)'),
+        cv: kw('조정점(C)'),
+        knots: kw('매듭(K)'),
+        degree: kw('차수(D)'),
+        undo: kw('한 단계 취소(U)'),
+        close: kw('닫기(C)'),
+        chord: kw('현(C)'),
+        sqrtChord: kw('현 제곱근(S)'),
+        uniform: kw('균일(U)')
+      }
+    },
+    polygon: {
+      numberOfSides: '변의 개수를 입력하세요',
+      centerOrEdge: '다각형의 중심을 찍거나 옵션을 고르세요',
+      radiusOrType: '원에 내접할지 외접할지 고르세요',
+      edgeStart: '한 변의 첫 끝점을 찍으세요',
+      edgeEnd: '한 변의 다른 끝점을 찍으세요',
+      keywords: { edge: kw('변으로(E)'), inscribed: kw('원에 내접(I)'), circumscribed: kw('원에 외접(C)') },
+      invalid: {
+        sides: '변의 개수는 3에서 1024 사이의 정수로 입력하세요.',
+        radius: '반지름은 0보다 커야 해요.',
+        edge: '변의 길이는 0보다 커야 해요.'
+      }
+    },
+    point: { point: '점을 찍으세요' },
+    xline: {
+      firstPointOrOptions: '점을 찍거나 옵션을 고르세요',
+      secondPoint: '두 번째 점을 찍으세요',
+      throughPoint: '지나갈 점을 찍으세요',
+      angle: '무한선의 각도를 입력하세요',
+      invalidDirection: '무한선 방향이 올바르지 않아요.',
+      keywords: { hor: kw('수평(H)'), ver: kw('수직(V)'), ang: kw('각도(A)') }
+    },
+    ray: { startPoint: '시작점을 찍으세요', throughPoint: '지나갈 점을 찍으세요' },
+    dimradius: {
+      selectObject: '호나 원을 고르세요',
+      rejectObject: '호나 원을 골라야 해요.',
+      dimLinePoint: '치수선을 놓을 자리를 찍으세요',
+      dimensionText: '치수 글자를 입력하세요',
+      textAngle: '치수 글자 각도를 정하세요',
+      keywords: { mtext: kw('여러 줄 글자(M)'), text: kw('글자(T)'), angle: kw('각도(A)') }
+    },
+    dimdiameter: {
+      selectObject: '호나 원을 고르세요',
+      rejectObject: '호나 원을 골라야 해요.',
+      dimLinePoint: '치수선을 놓을 자리를 찍으세요',
+      dimensionText: '치수 글자를 입력하세요',
+      textAngle: '치수 글자 각도를 정하세요',
+      keywords: { mtext: kw('여러 줄 글자(M)'), text: kw('글자(T)'), angle: kw('각도(A)') }
+    },
+    dimangular: {
+      vertexOrSelect: '각의 꼭짓점을 찍으세요. 선을 고르려면 확인',
+      xLine1Point: '각의 첫 번째 끝점을 찍으세요',
+      xLine2Point: '각의 두 번째 끝점을 찍으세요',
+      arcPoint: '치수 호를 놓을 자리를 찍으세요',
+      selectFirstLine: '첫 번째 선을 고르세요',
+      selectSecondLine: '두 번째 선을 고르세요',
+      rejectObject: '선을 골라야 해요.',
+      linesParallel: '두 선이 평행이라 각을 잴 수 없어요.',
+      dimensionText: '치수 글자를 입력하세요',
+      textAngle: '치수 글자 각도를 정하세요',
+      keywords: { mtext: kw('여러 줄 글자(M)'), text: kw('글자(T)'), angle: kw('각도(A)') }
+    },
+    dimarc: {
+      selectArc: '호를 고르세요',
+      rejectObject: '호를 골라야 해요.',
+      arcPoint: '호 길이 치수를 놓을 자리를 찍으세요',
+      dimensionText: '치수 글자를 입력하세요',
+      textAngle: '치수 글자 각도를 정하세요',
+      keywords: { mtext: kw('여러 줄 글자(M)'), text: kw('글자(T)'), angle: kw('각도(A)') }
+    },
+    dimordinate: {
+      featurePoint: '좌표를 표시할 자리를 찍으세요',
+      leaderEndpoint: '지시선 끝점을 찍으세요',
+      dimensionText: '치수 글자를 입력하세요',
+      textAngle: '치수 글자 각도를 정하세요',
+      keywords: {
+        mtext: kw('여러 줄 글자(M)'),
+        text: kw('글자(T)'),
+        angle: kw('각도(A)'),
+        xdatum: kw('X 좌표(X)'),
+        ydatum: kw('Y 좌표(Y)')
+      }
+    },
+    dimcontinue: {
+      nextPoint: '다음 치수 기준점을 찍거나 옵션을 고르세요. 끝내려면 확인',
+      selectDimension: '이어 갈 치수를 고르세요',
+      rejectObject: '선형이나 각도 치수를 골라야 해요.',
+      keywords: { select: kw('치수 고르기(S)') }
+    },
+    dimbaseline: {
+      nextPoint: '다음 치수 기준점을 찍거나 옵션을 고르세요. 끝내려면 확인',
+      selectDimension: '기준이 될 치수를 고르세요',
+      rejectObject: '선형이나 각도 치수를 골라야 해요.',
+      keywords: { select: kw('치수 고르기(S)') }
+    },
+    hatch: {
+      prompt: '경계가 될 객체를 고르거나 옵션을 고르세요',
+      pickPoint: '칠할 영역 안쪽을 찍으세요. 끝내려면 확인',
+      select: '해치를 넣을 객체를 고르세요',
+      patternName: '해치 무늬 이름을 입력하세요',
+      scale: '해치 무늬 축척을 입력하세요',
+      angle: '해치 무늬 각도를 입력하세요',
+      style: '해치 방식을 고르세요',
+      associative: '경계와 연동할지 고르세요',
+      invalidBoundary: '고른 객체로는 닫힌 경계가 만들어지지 않아요.',
+      keywords: {
+        pick: kw('안쪽 찍기(P)'),
+        select: kw('객체 고르기(S)'),
+        cancel: kw('취소(C)'),
+        pattern: kw('무늬(P)'),
+        scale: kw('축척(S)'),
+        angle: kw('각도(A)'),
+        style: kw('방식(T)'),
+        associative: kw('연동(AS)'),
+        normal: kw('보통(N)'),
+        outer: kw('바깥쪽만(O)'),
+        ignore: kw('무시(I)'),
+        yes: kw('예(Y)'),
+        no: kw('아니요(N)')
+      }
+    },
+    insert: {
+      blockName: '블록 이름을 입력하세요',
+      insertionPoint: '블록을 놓을 자리를 찍으세요',
+      scale: '축척을 입력하세요',
+      rotation: '회전 각도를 입력하세요',
+      invalidScale: '축척은 0보다 커야 해요.',
+      invalidBlockName: '블록 이름이 올바르지 않아요.',
+      blockNotFound: '그 블록이 없어요',
+      xrefNotAllowed: '외부 참조는 이 방법으로 넣을 수 없어요.'
+    },
+    measureDistance: { firstPoint: '첫 점을 찍으세요', secondPoint: '두 번째 점을 찍으세요' },
+    measureContinuous: { firstPoint: '첫 점을 찍으세요', nextPoint: '다음 점을 찍으세요. 끝내려면 확인' },
+    measureArea: { firstPoint: '첫 점을 찍으세요', nextPoint: '다음 점을 찍으세요. 끝내려면 확인' },
+    measureAngle: {
+      vertex: '각의 꼭짓점을 찍으세요',
+      arm1: '첫 번째 변 위의 점을 찍으세요',
+      arm2: '두 번째 변 위의 점을 찍으세요'
+    },
+    measureArc: {
+      startPoint: '호의 시작점을 찍으세요',
+      throughPoint: '호 위의 점을 찍으세요',
+      endPoint: '호의 끝점을 찍으세요',
+      lockedEndPoint: '호의 끝점을 찍으세요 (Ctrl로 큰 호와 작은 호 바꾸기)',
+      invalidPoints: '세 점이 한 줄에 있어서 호가 되지 않아요.'
+    },
+    measurePoint: { point: '좌표를 볼 점을 찍으세요' },
+    laycur: {
+      prompt: '현재 레이어로 옮길 객체를 고르고 확인을 누르세요',
+      currentLayerNotFound: '현재 레이어를 찾지 못했어요.',
+      noObjects: '고른 객체가 없어요.',
+      alreadyCurrent: '고른 객체가 이미 현재 레이어에 있어요.',
+      changed: '현재 레이어로 옮긴 객체'
+    },
+    layon: { alreadyOn: '모든 레이어가 이미 켜져 있어요.', turnedOn: '켠 레이어' },
+    laythw: { alreadyThawed: '동결된 레이어가 없어요.', thawed: '동결을 푼 레이어' },
+    layerp: { restored: '직전 레이어 상태로 되돌렸어요.', noPreviousState: '되돌릴 레이어 상태가 없어요.' },
+    layoff: {
+      prompt: '끌 레이어의 객체를 고르거나 옵션을 고르세요',
+      invalidSelection: '고를 수 없는 객체예요.',
+      layerNotFound: '레이어를 찾지 못했어요',
+      cannotTurnOffCurrent: '현재 레이어는 끌 수 없어요.',
+      alreadyOff: '이미 꺼진 레이어예요',
+      turnedOff: '끈 레이어',
+      restored: '되살린 레이어',
+      nothingToUndo: '되돌릴 레이어 끄기가 없어요.',
+      keywords: {
+        settings: kw('설정(S)'),
+        undo: kw('한 단계 취소(U)'),
+        viewports: kw('뷰포트(V)'),
+        blockSelection: kw('블록 고르기(B)'),
+        off: kw('끄기(O)'),
+        vpfreeze: kw('뷰포트 동결(V)'),
+        block: kw('블록(B)'),
+        entity: kw('객체(E)'),
+        none: kw('없음(N)')
+      }
+    },
+    layfrz: {
+      prompt: '동결할 레이어의 객체를 고르거나 옵션을 고르세요',
+      invalidSelection: '고를 수 없는 객체예요.',
+      layerNotFound: '레이어를 찾지 못했어요',
+      cannotFreezeCurrent: '현재 레이어는 동결할 수 없어요.',
+      alreadyFrozen: '이미 동결된 레이어예요',
+      frozen: '동결한 레이어',
+      restored: '되살린 레이어',
+      nothingToUndo: '되돌릴 레이어 동결이 없어요.',
+      keywords: {
+        settings: kw('설정(S)'),
+        undo: kw('한 단계 취소(U)'),
+        viewports: kw('뷰포트(V)'),
+        blockSelection: kw('블록 고르기(B)'),
+        freeze: kw('동결(F)'),
+        vpfreeze: kw('뷰포트 동결(V)'),
+        block: kw('블록(B)'),
+        entity: kw('객체(E)'),
+        none: kw('없음(N)')
+      }
+    },
+    layiso: {
+      prompt: '남겨 둘 레이어의 객체를 고르거나 옵션을 고르세요. 끝내려면 확인',
+      noLayers: '고른 레이어가 없어요.',
+      layerNotFound: '레이어를 찾지 못했어요',
+      isolated: '남겨 둔 레이어',
+      affectedLayers: '바뀐 레이어',
+      keywords: { settings: kw('설정(S)'), off: kw('끄기(O)'), lockAndFade: kw('잠그고 흐리게(L)'), vpfreeze: kw('뷰포트 동결(V)') }
+    },
+    layuniso: {
+      noPrevious: '되돌릴 레이어 고립이 없어요.',
+      layerNotFound: '레이어를 찾지 못했어요',
+      nothingRestored: '되돌린 레이어가 없어요.',
+      restored: '다시 보이게 한 레이어'
+    },
+    laylck: {
+      prompt: '잠글 레이어의 객체를 고르세요',
+      invalidSelection: '고를 수 없는 객체예요.',
+      layerNotFound: '레이어를 찾지 못했어요',
+      alreadyLocked: '이미 잠긴 레이어예요',
+      locked: '잠근 레이어'
+    },
+    layulk: {
+      prompt: '잠금을 풀 레이어의 객체를 고르세요',
+      invalidSelection: '고를 수 없는 객체예요.',
+      layerNotFound: '레이어를 찾지 못했어요',
+      alreadyUnlocked: '이미 잠금이 풀린 레이어예요',
+      unlocked: '잠금을 푼 레이어'
     },
     offset: {
       distance: '띄울 간격을 입력하세요',

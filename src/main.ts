@@ -14,7 +14,7 @@ import {
   pickSaveHandle,
   writeFile
 } from './files'
-import { enterEdit, hasUnsavedEdits, initEdit, isEditing, leaveEdit, resetEdit, saveEdits } from './edit'
+import { enterEdit, hasUnsavedEdits, initEdit, isEditing, leaveEdit, resetEdit, saveEdits, start, type Tool } from './edit'
 import {
   currentDatabase,
   initEngine,
@@ -41,6 +41,9 @@ import {
   ask,
   asBlobPart,
   closeIcon,
+  closeMenu,
+  menuOpenFor,
+  openMenu,
   el,
   formatDate,
   formatSize,
@@ -213,7 +216,7 @@ function pickFile() {
 }
 
 /** 열기: straight to the Files picker, or a choice when Google Drive is set up. */
-function openMenu() {
+function openFileMenu() {
   if (!state.ready) return
   if (driveConfigured()) $('open-sheet').hidden = false
   else pickFile()
@@ -711,6 +714,31 @@ function closePanels() {
   closeDriveSheet()
 }
 
+// Measuring works while only viewing too; the marks stay on screen, not in the file.
+const MEASURE_TOOLS: Tool[] = [
+  { cmd: 'measuredistance', label: '거리', icon: '<path d="M4 18 20 6"/><path d="M4 14v8M20 2v8"/>' },
+  { cmd: 'measurecontinuous', label: '이어서 재기', icon: '<path d="M3 18l6-8 5 5 7-9"/>' },
+  { cmd: 'measurearea', label: '면적', icon: '<path d="M4 18 8 5l12 4-3 11z"/><path d="M8 12h6M9 15h6" opacity=".6"/>' },
+  { cmd: 'measureangle', label: '각도', icon: '<path d="M4 20h16M4 20 16 6"/><path d="M11 20a7 7 0 0 0-2-4.8"/>' },
+  { cmd: 'measurearc', label: '호 길이', icon: '<path d="M4 18a8 8 0 0 1 16 0"/>' },
+  { cmd: 'measurepoint', label: '좌표', icon: '<path d="M12 21s7-6.3 7-12a7 7 0 1 0-14 0c0 5.7 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/>' },
+  { cmd: 'clearmeasurements', label: '재기 표시 모두 지우기', icon: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="m6 7 1 13h10l1-13M9 7V4h6v3"/>' }
+]
+
+function openMeasureMenu() {
+  const btn = $('btn-measure')
+  if (menuOpenFor(btn)) {
+    closeMenu()
+    return
+  }
+  if (!currentDatabase() || state.busy) return
+  openMenu(
+    btn,
+    MEASURE_TOOLS.map(t => ({ label: t.label, icon: t.icon, run: () => start(t.cmd) })),
+    '재기 표시는 화면에만 남고 파일에는 저장되지 않아요.'
+  )
+}
+
 async function toggleEdit() {
   if (!currentDatabase() || state.busy) return
   if (isEditing()) {
@@ -722,7 +750,7 @@ async function toggleEdit() {
 }
 
 function bindUi() {
-  $('btn-open').addEventListener('click', openMenu)
+  $('btn-open').addEventListener('click', openFileMenu)
   $('btn-open-home').addEventListener('click', pickFile)
   $('btn-drive-home').addEventListener('click', () => void browseDrive())
   $('open-device').addEventListener('click', pickFile)
@@ -731,6 +759,7 @@ function bindUi() {
     if (e.target === e.currentTarget) $('open-sheet').hidden = true
   })
   $('btn-edit').addEventListener('click', () => void toggleEdit())
+  $('btn-measure').addEventListener('click', openMeasureMenu)
   $('btn-fit').addEventListener('click', fitView)
   $('btn-layers').addEventListener('click', () => toggleLayerPanel())
   $('layer-close').addEventListener('click', () => toggleLayerPanel(false))
