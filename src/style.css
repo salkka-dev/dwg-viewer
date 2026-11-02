@@ -1146,8 +1146,14 @@ svg .fill {
   color: var(--lime);
 }
 
-.drive-home {
+.drive-home,
+.install-home {
   margin-top: 10px;
+}
+
+.install-home {
+  border-color: rgba(201, 242, 77, 0.45);
+  color: var(--lime);
 }
 
 /* Google Drive */

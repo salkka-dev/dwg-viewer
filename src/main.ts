@@ -24,6 +24,7 @@ import {
   whenViewIdle,
   zoomExtents
 } from './engine'
+import { initInstall } from './install'
 import { collectPages, type ExportPage, layoutHasContent } from './pages'
 import type { PaperChoice, PdfFile, PdfResult } from './pdf'
 import {
@@ -874,6 +875,7 @@ async function boot() {
   if (paper && ['original', 'A4', 'A3', 'A2', 'A1'].includes(paper)) state.paper = paper
   state.mono = readPref('color') !== 'color'
 
+  initInstall()
   bindUi()
   $('btn-drive-home').hidden = !driveConfigured()
   initDriveUi((blob, name, source) => void openBlob(blob, name, { source, force: true }))
