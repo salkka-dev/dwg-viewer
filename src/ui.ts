@@ -167,6 +167,49 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], note?: string) 
 /** True while the given button's menu is showing (a second tap closes it). */
 export const menuOpenFor = (anchor: HTMLElement) => openPopup?.anchor === anchor
 
+export interface TextField {
+  label: string
+  value: string
+  multiline?: boolean
+}
+
+/** Modal with text boxes for editing drawing text. Resolves the new values, or null when cancelled. */
+export function editTexts(title: string, fields: TextField[]): Promise<string[] | null> {
+  return new Promise(resolve => {
+    const inputs = fields.map(f =>
+      f.multiline
+        ? el('textarea', { className: 'text-field', value: f.value, rows: Math.min(8, Math.max(3, f.value.split('\n').length + 1)) })
+        : el('input', { className: 'text-field', type: 'text', value: f.value })
+    )
+    const done = (values: string[] | null) => {
+      backdrop.remove()
+      window.removeEventListener('keydown', onKey)
+      resolve(values)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') done(null)
+    }
+    const save = el('button', { className: 'big-btn', type: 'button', textContent: '바꾸기' })
+    save.addEventListener('click', () => done(inputs.map(i => i.value)))
+    const cancel = el('button', { className: 'ghost-btn wide', type: 'button', textContent: '취소' })
+    cancel.addEventListener('click', () => done(null))
+    const backdrop = el('div', { className: 'sheet-backdrop ask' }, [
+      el('div', { className: 'sheet ask-sheet text-sheet' }, [
+        el('header', { className: 'sheet-head' }, [el('h2', { textContent: title })]),
+        el(
+          'div',
+          { className: 'sheet-body text-fields' },
+          fields.map((f, i) => el('label', { className: 'text-label' }, [el('span', { textContent: f.label }), inputs[i]]))
+        ),
+        el('footer', { className: 'ask-foot' }, [save, cancel])
+      ])
+    ])
+    window.addEventListener('keydown', onKey)
+    document.body.append(backdrop)
+    inputs[0]?.focus()
+  })
+}
+
 export interface Choice<T extends string> {
   value: T
   label: string

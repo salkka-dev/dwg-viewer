@@ -956,6 +956,15 @@ svg .fill {
   display: none;
 }
 
+/* Wider than a phone (an iPad held upright, a half-screen PC window), tools
+   that do not fit go to a second row instead of hiding off screen. */
+@media (min-width: 721px) {
+  .edit-tools {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}
+
 .edit-tool {
   flex: none;
   min-width: 54px;
@@ -1098,6 +1107,50 @@ svg .fill {
 }
 
 .pick-mark.muted {
+  color: var(--muted);
+}
+
+/* Text and property editing */
+.text-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 14px;
+}
+
+.text-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.text-field,
+.prop-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+textarea.text-field {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.prop-sheet {
+  width: min(460px, 100%);
+}
+
+.prop-summary {
+  margin: 0 0 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 

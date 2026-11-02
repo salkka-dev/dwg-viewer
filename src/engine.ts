@@ -4,6 +4,8 @@ import {
   AcApSettingManager,
   acedClearFollowingClickSink,
   AcEdOpenMode,
+  AcEdPromptAngleOptions,
+  AcEdPromptNumericalOptions,
   LIBREDWG_PARSER_WORKER_FILE,
   MTEXT_RENDERER_WORKER_FILE
 } from '@mlightcad/cad-simple-viewer'
@@ -17,6 +19,7 @@ import {
 import { AcDbLibreDwgConverter } from '@mlightcad/libredwg-converter'
 import { AcTrMTextRenderer } from '@mlightcad/three-renderer'
 
+import { registerAppCommands } from './commands'
 import { KO_PROMPTS } from './ko-prompts'
 
 export interface LayoutInfo {
@@ -78,8 +81,127 @@ export async function initEngine(container: HTMLElement): Promise<AcApDocManager
   // and the whgtxt/whgdtxt Hangul big fonts instead of the Chinese default chain.
   await AcTrMTextRenderer.getInstance().setDefaultFonts('korean')
   AcApI18n.mergeLocaleMessage('en', KO_PROMPTS)
+  registerAppCommands()
   keepButtonTapsAfterTouchPicks()
+  keepCommandListOutOfPrompts(manager)
+  tapToPickObjects(manager)
+  typedNumbersOnTouch(manager)
   return manager
+}
+
+interface InputInternals {
+  getEntity(options: unknown): Promise<unknown>
+  makeFloatingInputPromise(options: { promptOptions: unknown; showStringInput?: boolean }): Promise<unknown>
+}
+
+const inputInternals = (manager: AcApDocManager) =>
+  (manager.editor as unknown as { inputManager?: InputInternals }).inputManager
+
+/**
+ * On a touch screen the engine's prompt panel has no field for typed numbers,
+ * so a radius, an offset distance, a scale factor or an angle could only be
+ * shown by tapping points. Open the panel's text field for number prompts as
+ * the engine already does for text prompts. Points can still be tapped, and ✓
+ * takes the typed value. With a mouse the command line stays the way to type.
+ */
+function typedNumbersOnTouch(manager: AcApDocManager) {
+  const input = inputInternals(manager)
+  if (!input) return
+  const show = input.makeFloatingInputPromise.bind(input)
+  input.makeFloatingInputPromise = options => {
+    const numeric = options.promptOptions instanceof AcEdPromptNumericalOptions || options.promptOptions instanceof AcEdPromptAngleOptions
+    const prompt = show(numeric ? { ...options, showStringInput: true } : options)
+    // The panel opened synchronously; the same field also takes text prompts.
+    const field = manager.curView.container.querySelector<HTMLTextAreaElement>('.ml-mobile-cmd-string-input')
+    if (field) field.inputMode = numeric ? 'decimal' : ''
+    return prompt
+  }
+}
+
+/** Pick box for a finger, in screen pixels (the engine's default of 4 suits a mouse). */
+const FINGER_PICK_PX = 24
+const TAP_SLOP_PX = 10
+const TAP_MAX_MS = 600
+
+/**
+ * Prompts that ask for one object (자르기, 연장, 모깎기, 글자 고치기, and the
+ * engine's own radius or diameter dimensions) wait for a click on the drawing.
+ * The engine cancels every touchstart on the canvas, and a cancelled touch
+ * never turns into a click, so a finger could not answer them on an iPad.
+ * While such a prompt is open, a short one-finger tap is handed over as that
+ * click, with a pick box sized for a fingertip.
+ */
+function tapToPickObjects(manager: AcApDocManager) {
+  const input = inputInternals(manager)
+  if (!input) return
+  let waiting = 0
+  const getEntity = input.getEntity.bind(input)
+  input.getEntity = async options => {
+    waiting++
+    try {
+      return await getEntity(options)
+    } finally {
+      waiting--
+    }
+  }
+
+  const view = manager.curView
+  const canvas = view.canvas
+  const downs = new Map<number, { x: number; y: number; t: number }>()
+  let pinch = false
+  canvas.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch') return
+    downs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp })
+    if (downs.size > 1) pinch = true
+  })
+  const lift = (e: PointerEvent, cancelled: boolean) => {
+    const down = downs.get(e.pointerId)
+    if (!down) return
+    downs.delete(e.pointerId)
+    const twoFingers = pinch
+    if (!downs.size) pinch = false
+    if (cancelled || twoFingers || !waiting) return
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX || e.timeStamp - down.t > TAP_MAX_MS) return
+    const { clientX, clientY } = e
+    // After the engine's own pointerup and touchend handlers, which may arm
+    // its swallow-the-next-click trap.
+    setTimeout(() => {
+      if (!waiting) return
+      acedClearFollowingClickSink()
+      const box = view.selectionBoxSize
+      view.selectionBoxSize = Math.max(box, FINGER_PICK_PX)
+      try {
+        canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX, clientY, button: 0, view: window }))
+      } finally {
+        view.selectionBoxSize = box
+      }
+    })
+  }
+  window.addEventListener('pointerup', e => lift(e, false))
+  window.addEventListener('pointercancel', e => lift(e, true))
+}
+
+interface CommandLineInternals {
+  isMsgPanelOpen: boolean
+  handleInputChange(): void
+  updatePopups(state: { showCmd?: boolean; showMsg?: boolean }): void
+}
+
+/**
+ * Typing in the command line lists matching command names, even while a
+ * command waits for an answer. Typing R for 반지름(R) opened a list of R...
+ * commands that stayed over the drawing after Enter and caught the next picks.
+ * List command names only when no command is running.
+ */
+function keepCommandListOutOfPrompts(manager: AcApDocManager) {
+  const editor = manager.editor as unknown as { inputManager?: { _commandLine?: CommandLineInternals } }
+  const cli = editor.inputManager?._commandLine
+  if (!cli) return
+  const listCommands = cli.handleInputChange.bind(cli)
+  cli.handleInputChange = () => {
+    if (manager.commandManager.activeCommand) cli.updatePopups({ showCmd: false, showMsg: cli.isMsgPanelOpen })
+    else listCommands()
+  }
 }
 
 /**

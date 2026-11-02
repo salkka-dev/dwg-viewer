@@ -2,6 +2,9 @@
 // The engine's own pad/phone panel shows each command's prompts with ✓ and ✕.
 
 import { AcApDocManager, eventBus } from '@mlightcad/cad-simple-viewer'
+import type { AcDbEntity } from '@mlightcad/data-model'
+
+import { onPropertiesCommand, type PropChange, queuePropChange } from './commands'
 
 import {
   cancelCommand,
@@ -35,7 +38,7 @@ export interface EditHost {
 
 const CLI_INPUT = '.ml-cli-text'
 // Commands not worth repeating with Enter / Space / right-click.
-const NO_REPEAT = new Set(['undo', 'redo', 'select', 'zoom', 'pan', 'regen'])
+const NO_REPEAT = new Set(['undo', 'redo', 'select', 'zoom', 'pan', 'regen', 'appprop'])
 const usesMouse = () => matchMedia('(pointer: fine)').matches
 
 export interface Tool {
@@ -120,9 +123,25 @@ const MODIFY: Tool[] = [
   { cmd: 'move', label: '이동', icon: '<path d="M12 3v18M3 12h18"/><path d="m9 6 3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>' },
   { cmd: 'copy', label: '복사', icon: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/>' },
   { cmd: 'rotate', label: '회전', icon: '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/>' },
-  { cmd: 'offset', label: '간격', icon: '<path d="M4 14c4-7 12-7 16 0"/><path d="M4 20c4-7 12-7 16 0"/>' },
+  { cmd: 'trim', label: '자르기', icon: '<path d="M4 20 20 4"/><path d="M4 8h7M13 16h7" stroke-dasharray="2 2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/>' },
+  { cmd: 'extend', label: '연장', icon: '<path d="M20 4v16"/><path d="M4 12h12"/><path d="m13 9 3 3-3 3"/>' },
   { cmd: 'erase', label: '지우기', icon: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="m6 7 1 13h10l1-13M9 7V4h6v3"/>' }
 ]
+
+const MORE_MODIFY: ToolGroup = {
+  label: '더 고치기',
+  icon: '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M15 19h5M17.5 16.5v5"/>',
+  tools: [
+    { cmd: 'offset', label: '간격 띄우기', icon: '<path d="M4 14c4-7 12-7 16 0"/><path d="M4 20c4-7 12-7 16 0"/>' },
+    { cmd: 'mirror', label: '대칭', icon: '<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7 4 17h5zM15 7l5 10h-5z"/>' },
+    { cmd: 'scale', label: '축척', icon: '<rect x="4" y="10" width="10" height="10" rx="1"/><path d="M10 4h10v10M14 10l6-6"/>' },
+    { cmd: 'fillet', label: '모깎기', icon: '<path d="M4 4v8a8 8 0 0 0 8 8h8"/>' },
+    { cmd: 'explode', label: '분해', icon: '<path d="M12 12 6 6M12 12l6-6M12 12l-6 6M12 12l6 6"/><circle cx="12" cy="12" r="2"/>' },
+    { cmd: 'textedit', label: '글자 고치기', icon: '<path d="M5 7V4h14v3M12 4v16M9 20h6"/><path d="m16 15 4-4" />' }
+  ]
+}
+
+const PROPS_ICON = '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'
 
 const LAYER_ICON = '<path d="M12 3 2 8l10 5 10-5-10-5zM2 13l10 5 10-5M2 18l10 5 10-5"/>'
 
@@ -147,11 +166,14 @@ export function initEdit(h: EditHost) {
     ...NOTE.map(toolButton),
     blockButton(),
     el('span', { className: 'edit-sep' }),
-    ...MODIFY.map(toolButton)
+    ...MODIFY.map(toolButton),
+    groupButton(MORE_MODIFY),
+    propsButton()
   )
   // Layer and save stay in view while the tool row scrolls on narrow screens.
   $('edit-bar').insertBefore(layerButton(), $('edit-save'))
   $('edit-save').addEventListener('click', () => void saveEdits())
+  onPropertiesCommand(openPropsSheet)
 
   eventBus.on('undo-stack-changed', () => {
     if (!editing) return
@@ -348,6 +370,109 @@ function layerButton() {
   b.title = '새로 그리는 선이 들어갈 레이어'
   b.addEventListener('click', () => void pickLayer())
   return b
+}
+
+function propsButton() {
+  const b = el('button', { className: 'edit-tool', type: 'button', title: '고른 객체의 레이어, 색, 선 바꾸기' }, [
+    icon(PROPS_ICON),
+    el('span', { textContent: '속성' })
+  ])
+  b.dataset.cmd = 'appprop'
+  b.addEventListener('click', () => openPropsSheet())
+  return b
+}
+
+const COLOR_NAMES = ['', '빨강', '노랑', '초록', '하늘', '파랑', '자홍', '흰색·검정', '회색', '밝은 회색']
+const LINE_WEIGHTS = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200, 211]
+
+const colorKey = (c: AcDbEntity['color']) =>
+  c.isByLayer ? 'layer' : c.isByBlock ? 'block' : c.colorIndex !== undefined ? String(c.colorIndex) : 'rgb'
+
+/** One value when every selected object shares it, otherwise undefined ("여러 가지"). */
+const shared = <T,>(values: T[]) => (values.every(v => v === values[0]) ? values[0] : undefined)
+
+/** 속성: layer, color, linetype and lineweight of the selected objects, applied as one undo step. */
+function openPropsSheet(ids = AcApDocManager.instance.curView.selectionSet.ids) {
+  const mgr = AcApDocManager.instance
+  if (!ids.length) {
+    toast('먼저 바꿀 객체를 눌러서 고르세요')
+    return
+  }
+  const db = mgr.curDocument.database
+  const entities = ids.map(id => db.tables.blockTable.getEntityById(id)).filter((e): e is AcDbEntity => !!e)
+  const now = {
+    layer: shared(entities.map(e => e.layer)),
+    color: shared(entities.map(e => colorKey(e.color))),
+    lineType: shared(entities.map(e => e.lineType)),
+    lineWeight: shared(entities.map(e => String(e.lineWeight)))
+  }
+  const select = (options: [string, string][], current: string | undefined) => {
+    const s = el('select', { className: 'prop-select' })
+    if (current === undefined) s.append(el('option', { value: '', textContent: '여러 가지 (그대로 두기)', selected: true }))
+    for (const [value, label] of options) s.append(el('option', { value, textContent: label, selected: value === current }))
+    if (current !== undefined && !options.some(([value]) => value === current)) {
+      s.append(el('option', { value: current, textContent: current === 'rgb' ? '트루컬러 (그대로)' : current, selected: true }))
+    }
+    return s
+  }
+  const layerNames = mgr.curDocument.layerStore
+    .getLayers()
+    .map(l => l.name)
+    .sort((a, b) => a.localeCompare(b, 'ko'))
+  const linetypes = [...db.tables.linetypeTable.newIterator()].map(r => r.name).filter(n => !/^by(layer|block)$/i.test(n))
+  const fields = {
+    layer: select(layerNames.map(n => [n, n]), now.layer),
+    color: select(
+      [['layer', '레이어 색 (ByLayer)'], ['block', '블록 색 (ByBlock)'], ...COLOR_NAMES.slice(1).map((n, i): [string, string] => [String(i + 1), `${i + 1} ${n}`])],
+      now.color
+    ),
+    lineType: select(
+      [['ByLayer', '레이어 선 종류 (ByLayer)'], ['ByBlock', '블록 선 종류 (ByBlock)'], ...linetypes.map((n): [string, string] => [n, n])],
+      now.lineType
+    ),
+    lineWeight: select(
+      [['-1', '레이어 굵기 (ByLayer)'], ['-2', '블록 굵기 (ByBlock)'], ['-3', '기본 굵기'], ...LINE_WEIGHTS.map((w): [string, string] => [String(w), `${(w / 100).toFixed(2)} mm`])],
+      now.lineWeight
+    )
+  }
+  const close = () => backdrop.remove()
+  const apply = el('button', { className: 'big-btn', type: 'button', textContent: '바꾸기' })
+  apply.addEventListener('click', () => {
+    const changed = (key: keyof typeof fields) => fields[key].value !== '' && fields[key].value !== now[key]
+    const change: PropChange = { ids }
+    if (changed('layer')) change.layer = fields.layer.value
+    if (changed('color')) {
+      const v = fields.color.value
+      change.color = v === 'layer' ? { method: 'layer' } : v === 'block' ? { method: 'block' } : { method: 'index', index: Number(v) }
+    }
+    if (changed('lineType')) change.lineType = fields.lineType.value
+    if (changed('lineWeight')) change.lineWeight = Number(fields.lineWeight.value)
+    close()
+    if (Object.keys(change).length === 1) return
+    queuePropChange(change)
+    start('appprop')
+    toast(`객체 ${ids.length}개의 속성을 바꿨어요`)
+  })
+  const cancel = el('button', { className: 'ghost-btn wide', type: 'button', textContent: '닫기' })
+  cancel.addEventListener('click', close)
+  const row = (label: string, control: HTMLElement) => el('label', { className: 'text-label' }, [el('span', { textContent: label }), control])
+  const backdrop = el('div', { className: 'sheet-backdrop' }, [
+    el('div', { className: 'sheet prop-sheet' }, [
+      el('header', { className: 'sheet-head' }, [el('h2', { textContent: '속성' })]),
+      el('div', { className: 'sheet-body text-fields' }, [
+        el('p', { className: 'prop-summary', textContent: `고른 객체 ${entities.length}개` }),
+        row('레이어', fields.layer),
+        row('색', fields.color),
+        row('선 종류', fields.lineType),
+        row('선 굵기', fields.lineWeight)
+      ]),
+      el('footer', { className: 'ask-foot' }, [apply, cancel])
+    ])
+  ])
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) close()
+  })
+  document.body.append(backdrop)
 }
 
 function markActive(globalName: string | null) {
