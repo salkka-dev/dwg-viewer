@@ -887,6 +887,291 @@ svg .fill {
   color: #4a0d0d;
 }
 
+/* Edit mode */
+.command-running .ml-grip-handle {
+  pointer-events: none;
+}
+
+.edit-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px max(10px, env(safe-area-inset-right)) 6px max(6px, env(safe-area-inset-left));
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  z-index: 19;
+}
+
+.edit-tools {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.edit-tools::-webkit-scrollbar {
+  display: none;
+}
+
+.edit-tool {
+  flex: none;
+  min-width: 54px;
+  height: 52px;
+  padding: 0 6px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.edit-tool:active {
+  background: var(--panel-2);
+}
+
+.edit-tool.active {
+  background: rgba(201, 242, 77, 0.14);
+  color: var(--lime);
+}
+
+.edit-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.layer-tool span {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.edit-sep {
+  flex: none;
+  width: 1px;
+  height: 30px;
+  margin: 0 4px;
+  background: var(--line);
+}
+
+.save-pill {
+  flex: none;
+  height: 42px;
+  padding: 0 16px 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 242, 77, 0.5);
+  color: var(--lime);
+  font-weight: 700;
+}
+
+.save-pill.dirty {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--lime-ink);
+}
+
+.save-pill svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Questions and pickers */
+.ask-sheet,
+.open-sheet {
+  width: min(420px, 100%);
+}
+
+.ask-text {
+  margin: 0 0 16px;
+  padding: 0 18px;
+}
+
+.ask-foot,
+.open-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 18px 20px;
+}
+
+.ghost-btn.wide {
+  width: 100%;
+  height: 52px;
+  border-radius: 16px;
+  font-size: 16px;
+}
+
+.layer-pick {
+  width: min(420px, 100%);
+}
+
+.pick-hint {
+  padding: 0 18px;
+}
+
+.layer-row.pick.current .layer-name {
+  color: var(--lime);
+  font-weight: 650;
+}
+
+.pick-mark {
+  flex: none;
+  font-size: 12px;
+  color: var(--lime);
+}
+
+.drive-home {
+  margin-top: 10px;
+}
+
+/* Google Drive */
+.drive-sheet {
+  height: min(760px, 100%);
+}
+
+.drive-sheet .sheet-body {
+  flex: 1;
+}
+
+.drive-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 12px;
+}
+
+.drive-tabs {
+  margin-bottom: 10px;
+}
+
+.drive-tabs button.active {
+  background: var(--lime);
+  color: var(--lime-ink);
+  font-weight: 700;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.crumb {
+  flex: none;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--cyan-hi);
+  font-size: 14px;
+}
+
+.crumb.current {
+  color: var(--text);
+  font-weight: 650;
+  cursor: default;
+}
+
+.crumb-sep {
+  flex: none;
+  color: var(--muted);
+}
+
+.drive-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.drive-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.drive-row {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  text-align: left;
+  background: var(--bg);
+}
+
+.drive-row:active {
+  background: var(--panel-2);
+}
+
+.drive-row svg {
+  color: var(--lime);
+}
+
+.drive-row.folder svg {
+  color: var(--cyan-hi);
+}
+
+.drive-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.drive-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drive-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.drive-loading {
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.drive-empty {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.drive-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.drive-account {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 @media (max-width: 720px) {
   .tool-label {
     display: none;

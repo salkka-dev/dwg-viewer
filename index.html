@@ -26,6 +26,10 @@
         </button>
         <div class="doc-title" id="doc-title">도면 뷰어</div>
         <div class="tool-group">
+          <button class="tool-btn needs-doc" id="btn-edit" type="button" title="편집">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></svg>
+            <span class="tool-label">편집</span>
+          </button>
           <button class="tool-btn needs-doc" id="btn-fit" type="button" title="화면에 맞추기">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
             <span class="tool-label">맞춤</span>
@@ -45,6 +49,14 @@
         </div>
       </header>
 
+      <div class="edit-bar" id="edit-bar" hidden>
+        <div class="edit-tools" id="edit-tools"></div>
+        <button class="save-pill" id="edit-save" type="button" title="고친 도면을 DXF로 저장">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z" /><path d="M8 4v5h7V4M8 20v-6h8v6" /></svg>
+          <span>저장</span>
+        </button>
+      </div>
+
       <main class="stage" id="stage">
         <div id="cad-host"></div>
 
@@ -57,6 +69,7 @@
               파일은 이 기기 안에서만 처리되고 어디에도 올라가지 않아요.
             </p>
             <button class="big-btn" id="btn-open-home" type="button">파일 열기</button>
+            <button class="ghost-btn wide drive-home" id="btn-drive-home" type="button" hidden>구글 드라이브에서 열기</button>
             <div class="recent" id="recent-wrap" hidden>
               <h2>최근 연 파일</h2>
               <ul id="recent-list"></ul>
@@ -137,6 +150,46 @@
           </div>
           <footer class="sheet-foot">
             <button class="big-btn" id="pdf-run" type="button">PDF 만들기</button>
+          </footer>
+        </div>
+      </div>
+
+      <div class="sheet-backdrop" id="open-sheet" hidden>
+        <div class="sheet open-sheet" role="dialog" aria-modal="true" aria-label="도면 열기">
+          <header class="sheet-head"><h2>도면 열기</h2></header>
+          <div class="open-choices">
+            <button class="big-btn" id="open-device" type="button">이 기기의 파일</button>
+            <button class="ghost-btn wide" id="open-drive" type="button">구글 드라이브</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sheet-backdrop" id="drive-sheet" hidden>
+        <div class="sheet drive-sheet" role="dialog" aria-modal="true" aria-labelledby="drive-title">
+          <header class="sheet-head">
+            <h2 id="drive-title">구글 드라이브</h2>
+            <button class="close-btn" id="drive-close" type="button" aria-label="닫기">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+            </button>
+          </header>
+          <div class="sheet-body">
+            <div class="drive-connect" id="drive-connect" hidden>
+              <p class="hint" id="drive-connect-msg"></p>
+              <button class="big-btn" id="drive-signin" type="button">구글 계정 연결</button>
+            </div>
+            <div class="drive-browser" id="drive-browser" hidden>
+              <div class="seg drive-tabs" id="drive-tabs" role="tablist">
+                <button type="button" data-root="root">내 드라이브</button>
+                <button type="button" data-root="shared">공유 문서함</button>
+              </div>
+              <nav class="crumbs" id="drive-crumbs" aria-label="폴더 경로"></nav>
+              <ul class="drive-list" id="drive-list"></ul>
+              <p class="hint drive-empty" id="drive-empty" hidden>이 폴더에는 DWG나 DXF 파일이 없어요.</p>
+            </div>
+          </div>
+          <footer class="sheet-foot drive-foot" id="drive-foot" hidden>
+            <span class="drive-account" id="drive-account"></span>
+            <button class="ghost-btn" id="drive-signout" type="button">연결 해제</button>
           </footer>
         </div>
       </div>

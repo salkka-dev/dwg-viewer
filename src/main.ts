@@ -2,9 +2,11 @@ import './style.css'
 
 import { AcApDocManager, type AcApLayerInfo } from '@mlightcad/cad-simple-viewer'
 import { AcGeBox2d, AcGePoint2d } from '@mlightcad/data-model'
-import { zipSync } from 'fflate'
 import { registerSW } from 'virtual:pwa-register'
 
+import { DriveAuthError, driveConfigured, saveFile, signedIn, signIn, takeSignInResult } from './drive'
+import { closeDriveSheet, initDriveUi, openDriveSheet } from './drive-ui'
+import { enterEdit, hasUnsavedEdits, initEdit, isEditing, leaveEdit, resetEdit, saveEdits } from './edit'
 import {
   currentDatabase,
   initEngine,
@@ -16,10 +18,34 @@ import {
 } from './engine'
 import { collectPages, type ExportPage, layoutHasContent } from './pages'
 import type { PaperChoice, PdfFile, PdfResult } from './pdf'
-import { listRecent, rememberFile, removeRecent, type RecentFile, touchRecent } from './recent'
+import {
+  type DocSource,
+  listRecent,
+  rememberFile,
+  removeRecent,
+  type RecentFile,
+  stashPendingSave,
+  takePendingSave,
+  touchRecent
+} from './recent'
+import {
+  $,
+  ask,
+  asBlobPart,
+  closeIcon,
+  el,
+  formatDate,
+  formatSize,
+  readPref,
+  setBusy,
+  shareOrDownload,
+  toast,
+  writePref
+} from './ui'
 import { safeFileName } from './util'
 
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
+// Read the Google sign-in return before anything rewrites the URL.
+const signInResult = takeSignInResult()
 
 const app = $('app')
 const fileInput = $<HTMLInputElement>('file-input')
@@ -35,73 +61,41 @@ const state = {
   mono: true,
   result: undefined as PdfResult | undefined,
   darkBackground: true,
-  layerFilter: ''
+  layerFilter: '',
+  // The drawing as it was opened, for "저장하지 않고 끝내기" and Drive saves.
+  blob: undefined as Blob | undefined,
+  fileName: '',
+  source: { kind: 'device' } as DocSource
 }
 
 const DARK_BG = 0x0e1016
 const LIGHT_BG = 0xffffff
 
-/* ---------- small helpers ---------- */
-
-let toastTimer = 0
-function toast(message: string, isError = false) {
-  const el = $('toast')
-  el.textContent = message
-  el.classList.toggle('error', isError)
-  el.hidden = false
-  clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => (el.hidden = true), isError ? 5200 : 3200)
-}
-
-function setBusy(text: string | null) {
-  $('busy').hidden = text === null
-  if (text) $('busy-text').textContent = text
-}
-
-function formatSize(bytes: number) {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`
-}
-
-function formatDate(ms: number) {
-  const d = new Date(ms)
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props: Partial<HTMLElementTagNameMap[K]> & { className?: string } = {},
-  children: (Node | string)[] = []
-) {
-  const node = document.createElement(tag)
-  Object.assign(node, props)
-  node.append(...children)
-  return node
-}
-
-const closeIcon = () => {
-  const span = document.createElement('span')
-  span.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>'
-  return span.firstElementChild as SVGElement
-}
-
-function readPref(key: string) {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function writePref(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    // ignore
-  }
-}
+// Set right before leaving for Google sign-in with the edits already stashed.
+let leavingForSignIn = false
+// True from the start of an open until the engine has finished drawing it.
+let opening = false
 
 /* ---------- opening files ---------- */
+
+interface OpenOptions {
+  recent?: RecentFile
+  source?: DocSource
+  /** The caller already dealt with unsaved edits. */
+  force?: boolean
+}
+
+/** Asks before unsaved edits would be lost. Resolves true when it is fine to go on. */
+async function confirmDropEdits(action: string): Promise<boolean> {
+  if (!hasUnsavedEdits()) return true
+  const choice = await ask('저장하지 않은 수정이 있어요', `${action} 고친 내용이 사라져요. 먼저 DXF로 저장할까요?`, [
+    { value: 'save', label: '저장하고 계속', strong: true },
+    { value: 'discard', label: '저장하지 않고 계속' },
+    { value: 'stay', label: '취소' }
+  ])
+  if (choice === 'save') return saveEdits()
+  return choice === 'discard'
+}
 
 /** Checks the file header: DWG starts with "AC10", DXF is text with a SECTION header (or binary DXF). */
 function sniffKind(buffer: ArrayBuffer, name: string): 'dwg' | 'dxf' | null {
@@ -113,9 +107,11 @@ function sniffKind(buffer: ArrayBuffer, name: string): 'dwg' | 'dxf' | null {
   return ext === 'dwg' || ext === 'dxf' ? ext : null
 }
 
-async function openBlob(blob: Blob, name: string, recent?: RecentFile) {
+async function openBlob(blob: Blob, name: string, opts: OpenOptions = {}) {
   if (!state.ready || state.busy) return
+  if (!opts.force && !(await confirmDropEdits('다른 도면을 열면'))) return
   state.busy = true
+  opening = true
   setBusy(`${name} 여는 중`)
   try {
     const buffer = await blob.arrayBuffer()
@@ -126,6 +122,7 @@ async function openBlob(blob: Blob, name: string, recent?: RecentFile) {
     }
     const fileName = name.toLowerCase().endsWith(`.${kind}`) ? name : `${name}.${kind}`
     closePanels()
+    resetEdit()
     const started = performance.now()
     const ok = await openDrawing(fileName, buffer)
     console.info(`[dwg-viewer] open ${fileName}: ${ok ? 'ok' : 'failed'} in ${Math.round(performance.now() - started)}ms`)
@@ -136,6 +133,9 @@ async function openBlob(blob: Blob, name: string, recent?: RecentFile) {
     state.docName = fileName.replace(/\.(dwg|dxf)$/i, '')
     state.docSerial++
     state.result = undefined
+    state.blob = blob
+    state.fileName = fileName
+    state.source = opts.source ?? opts.recent?.source ?? { kind: 'device' }
     app.classList.remove('no-doc')
     $('doc-title').textContent = state.docName
     document.title = `${state.docName} - 도면 뷰어`
@@ -143,21 +143,126 @@ async function openBlob(blob: Blob, name: string, recent?: RecentFile) {
     watchLayers()
     resetFitState()
     renderLayouts()
-    if (recent) void touchRecent(recent)
-    else void rememberFile(fileName, blob)
+    if (opts.recent) void touchRecent(opts.recent)
+    else void rememberFile(fileName, blob, state.source)
   } catch (err) {
     console.error(err)
     toast('파일을 여는 중 문제가 생겼어요', true)
   } finally {
     state.busy = false
     setBusy(null)
+    settleAfterOpen()
   }
+}
+
+/**
+ * The engine keeps drawing a big DWG in batches after `openDrawing` returns,
+ * and framing the view in the middle of that stops the remaining batches.
+ * Wait until it is idle, then frame once for the final stage size (the
+ * layout tabs appear right after opening and make the stage shorter).
+ */
+function settleAfterOpen() {
+  const serial = state.docSerial
+  let quiet = 0
+  const check = () => {
+    if (serial !== state.docSerial || state.busy) return
+    quiet = AcApDocManager.instance.curView.isProcessingEntities ? 0 : quiet + 1
+    if (quiet < 3) {
+      setTimeout(check, 150)
+      return
+    }
+    opening = false
+    if (currentDatabase()) fitView()
+  }
+  setTimeout(check, 150)
 }
 
 function pickFile() {
   if (!state.ready) return
+  $('open-sheet').hidden = true
   fileInput.value = ''
   fileInput.click()
+}
+
+/** 열기: straight to the Files picker, or a choice when Google Drive is set up. */
+function openMenu() {
+  if (!state.ready) return
+  if (driveConfigured()) $('open-sheet').hidden = false
+  else pickFile()
+}
+
+async function browseDrive() {
+  $('open-sheet').hidden = true
+  if (!state.ready || !(await confirmDropEdits('드라이브에서 다른 도면을 열면'))) return
+  openDriveSheet()
+}
+
+/* ---------- saving edits ---------- */
+
+async function saveEdited(blob: Blob, fileName: string): Promise<boolean> {
+  const source = state.source
+  if (source.kind === 'drive') return saveEditedToDrive(blob, fileName, source)
+  return shareOrDownload([new File([blob], fileName, { type: 'application/dxf' })])
+}
+
+async function saveEditedToDrive(
+  blob: Blob,
+  fileName: string,
+  source: Extract<DocSource, { kind: 'drive' }>
+): Promise<boolean> {
+  const goSignIn = async () => {
+    // Google sign-in reloads the app; keep the edits on this device until it is back.
+    await stashPendingSave({ name: fileName, blob, parentId: source.parentId, folderName: source.folderName })
+    leavingForSignIn = true
+    signIn({ action: 'save' })
+    return false
+  }
+  if (!signedIn()) return goSignIn()
+  setBusy('구글 드라이브에 저장 중')
+  try {
+    const { item, inMyDrive } = await saveFile(fileName, source.parentId, blob)
+    const folderName = inMyDrive ? '내 드라이브' : source.folderName
+    state.source = { kind: 'drive', fileId: item.id, parentId: inMyDrive ? 'root' : source.parentId, name: item.name, folderName }
+    toast(
+      inMyDrive
+        ? `원래 폴더에 쓸 권한이 없어서 내 드라이브에 ${item.name} 파일로 저장했어요`
+        : `구글 드라이브 '${folderName}' 폴더에 ${item.name} 파일로 저장했어요`
+    )
+    return true
+  } catch (err) {
+    if (err instanceof DriveAuthError) return goSignIn()
+    console.error(err)
+    toast('드라이브에 저장하지 못했어요. 인터넷 연결을 확인해 주세요', true)
+    return false
+  } finally {
+    setBusy(null)
+  }
+}
+
+/** After the sign-in round trip: upload the stashed edits, then reopen them. */
+async function resumePendingSave() {
+  const pending = await takePendingSave()
+  if (!pending) return
+  setBusy('구글 드라이브에 저장 중')
+  try {
+    const { item, inMyDrive } = await saveFile(pending.name, pending.parentId, pending.blob)
+    const folderName = inMyDrive ? '내 드라이브' : pending.folderName
+    setBusy(null)
+    await openBlob(pending.blob, item.name, {
+      force: true,
+      source: { kind: 'drive', fileId: item.id, parentId: inMyDrive ? 'root' : pending.parentId, name: item.name, folderName }
+    })
+    toast(`구글 드라이브 '${folderName}' 폴더에 ${item.name} 파일로 저장했어요`)
+  } catch (err) {
+    console.error(err)
+    setBusy(null)
+    // Keep the work: reopen it so 편집 > 저장 can try again.
+    await openBlob(pending.blob, pending.name, {
+      force: true,
+      source: { kind: 'drive', fileId: '', parentId: pending.parentId, name: pending.name, folderName: pending.folderName }
+    })
+    toast('드라이브에 저장하지 못했어요. 편집을 누르고 저장을 다시 눌러 주세요', true)
+  }
 }
 
 fileInput.addEventListener('change', () => {
@@ -177,7 +282,7 @@ async function renderRecent() {
       el('span', { className: 'recent-name', textContent: f.name }),
       el('span', { className: 'recent-meta', textContent: `${formatSize(f.size)} · ${formatDate(f.openedAt)}` })
     ])
-    open.addEventListener('click', () => void openBlob(f.blob, f.name, f))
+    open.addEventListener('click', () => void openBlob(f.blob, f.name, { recent: f }))
     const del = el('button', { className: 'recent-del', type: 'button', title: '목록에서 지우기' })
     del.setAttribute('aria-label', `${f.name} 목록에서 지우기`)
     del.append(closeIcon())
@@ -246,10 +351,7 @@ function resetFitState() {
   fitted.clear()
   visited.clear()
   const id = currentDatabase()?.currentSpaceId
-  if (id) {
-    visited.add(id)
-    fitted.set(id, '')
-  }
+  if (id) visited.add(id)
 }
 
 function fitView() {
@@ -259,6 +361,7 @@ function fitView() {
 }
 
 function refitIfStale() {
+  if (opening) return
   const id = currentDatabase()?.currentSpaceId
   const size = id ? fitted.get(id) : undefined
   if (size !== undefined && size !== stageSize()) fitView()
@@ -533,42 +636,9 @@ function renderResults() {
   }
 }
 
-function asBlobPart(bytes: Uint8Array): BlobPart {
-  return bytes as unknown as BlobPart
-}
-
-function downloadBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob)
-  const a = el('a', { href: url, download: name })
-  document.body.append(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 60_000)
-}
-
-/**
- * iPad: hands the PDFs to the share sheet ("파일에 저장" saves all of them at once).
- * Desktop: downloads one PDF, or a ZIP when several are saved together.
- */
 async function saveFiles(files: PdfFile[], zipName?: string) {
   const asFiles = files.map(f => new File([asBlobPart(f.bytes)], f.name, { type: 'application/pdf' }))
-  const touchDevice = navigator.maxTouchPoints > 1
-  if (touchDevice && navigator.canShare?.({ files: asFiles })) {
-    try {
-      await navigator.share({ files: asFiles })
-      return
-    } catch (err) {
-      if ((err as DOMException)?.name === 'AbortError') return
-    }
-  }
-  if (asFiles.length === 1) {
-    downloadBlob(asFiles[0], asFiles[0].name)
-    return
-  }
-  const entries: Record<string, Uint8Array> = {}
-  for (const f of files) entries[f.name] = f.bytes
-  const zipped = zipSync(entries, { level: 0 })
-  downloadBlob(new Blob([asBlobPart(zipped)], { type: 'application/zip' }), zipName ?? 'pdf.zip')
+  await shareOrDownload(asFiles, zipName ?? 'pdf.zip')
 }
 
 /* ---------- panels + wiring ---------- */
@@ -576,11 +646,30 @@ async function saveFiles(files: PdfFile[], zipName?: string) {
 function closePanels() {
   toggleLayerPanel(false)
   $('pdf-sheet').hidden = true
+  $('open-sheet').hidden = true
+  closeDriveSheet()
+}
+
+async function toggleEdit() {
+  if (!currentDatabase() || state.busy) return
+  if (isEditing()) {
+    await leaveEdit()
+    return
+  }
+  closePanels()
+  enterEdit()
 }
 
 function bindUi() {
-  $('btn-open').addEventListener('click', pickFile)
+  $('btn-open').addEventListener('click', openMenu)
   $('btn-open-home').addEventListener('click', pickFile)
+  $('btn-drive-home').addEventListener('click', () => void browseDrive())
+  $('open-device').addEventListener('click', pickFile)
+  $('open-drive').addEventListener('click', () => void browseDrive())
+  $('open-sheet').addEventListener('click', e => {
+    if (e.target === e.currentTarget) $('open-sheet').hidden = true
+  })
+  $('btn-edit').addEventListener('click', () => void toggleEdit())
   $('btn-fit').addEventListener('click', fitView)
   $('btn-layers').addEventListener('click', () => toggleLayerPanel())
   $('layer-close').addEventListener('click', () => toggleLayerPanel(false))
@@ -639,7 +728,14 @@ function bindUi() {
     } else if (e.key === 'Escape') {
       closePdfSheet()
       toggleLayerPanel(false)
+      $('open-sheet').hidden = true
+      closeDriveSheet()
     }
+  })
+
+  // Desktop browsers can still warn before a tab with unsaved edits closes.
+  window.addEventListener('beforeunload', e => {
+    if (hasUnsavedEdits() && !leavingForSignIn) e.preventDefault()
   })
 
   // Stop Safari from zooming the whole page; pinch belongs to the drawing.
@@ -675,6 +771,8 @@ async function boot() {
   state.mono = readPref('color') !== 'color'
 
   bindUi()
+  $('btn-drive-home').hidden = !driveConfigured()
+  initDriveUi((blob, name, source) => void openBlob(blob, name, { source, force: true }))
   void renderRecent()
   setBusy('준비 중')
   try {
@@ -682,11 +780,35 @@ async function boot() {
     state.ready = true
     applyBackground()
     watchViewSize()
+    initEdit({
+      docName: () => state.docName,
+      save: saveEdited,
+      revert: async () => {
+        if (state.blob) await openBlob(state.blob, state.fileName, { force: true, source: state.source })
+      }
+    })
   } catch (err) {
     console.error(err)
     toast('뷰어를 시작하지 못했어요. 새로고침해 주세요', true)
   } finally {
     setBusy(null)
+  }
+
+  if (signInResult && state.ready) {
+    if ('error' in signInResult) {
+      // A save that was waiting on sign-in comes back as an open drawing, so nothing is lost.
+      const pending = await takePendingSave()
+      if (pending) await openBlob(pending.blob, pending.name, { force: true })
+      const cancelled = signInResult.error === 'access_denied'
+      toast(
+        cancelled ? '구글 계정 연결을 취소했어요' : '구글 계정을 연결하지 못했어요. 다시 시도해 주세요',
+        !cancelled
+      )
+    } else if (signInResult.after.action === 'browse') {
+      openDriveSheet(signInResult.after.path)
+    } else {
+      await resumePendingSave()
+    }
   }
 
   void navigator.storage?.persist?.()
