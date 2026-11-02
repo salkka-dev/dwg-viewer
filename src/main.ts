@@ -72,7 +72,7 @@ const state = {
   paper: 'A3' as PaperChoice,
   mono: true,
   result: undefined as PdfResult | undefined,
-  darkBackground: true,
+  look: 'dark' as Look,
   layerFilter: '',
   // The drawing as it was opened, for "저장하지 않고 끝내기" and Drive saves.
   blob: undefined as Blob | undefined,
@@ -462,11 +462,52 @@ function watchViewSize() {
 
 /* ---------- background ---------- */
 
+/**
+ * dark / light keep the drawing's own colors (CAD colors are chosen for a dark
+ * background, so yellow or cyan lines fade on white). mono is the engine's
+ * reading mode, black lines on white like a printout; the file is untouched.
+ */
+type Look = 'dark' | 'light' | 'mono'
+
+const LOOKS: { value: Look; label: string; icon: string }[] = [
+  { value: 'dark', label: '검은 배경 (도면 원래 색)', icon: '<circle cx="12" cy="12" r="8" class="fill"/>' },
+  { value: 'light', label: '흰 배경 (도면 원래 색)', icon: '<circle cx="12" cy="12" r="8"/>' },
+  { value: 'mono', label: '흑백 (인쇄한 것처럼)', icon: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" class="fill"/>' }
+]
+
 function applyBackground() {
   const mgr = AcApDocManager.tryGetInstance()
   if (!mgr) return
-  mgr.curView.backgroundColor = state.darkBackground ? DARK_BG : LIGHT_BG
-  $('btn-bg').classList.toggle('on', !state.darkBackground)
+  const view = mgr.curView
+  if (state.look === 'mono') {
+    view.backgroundColor = LIGHT_BG
+    view.setReadingMode(true)
+  } else {
+    if (view.readingModeEnabled) view.setReadingMode(false)
+    view.backgroundColor = state.look === 'dark' ? DARK_BG : LIGHT_BG
+  }
+  $('btn-bg').classList.toggle('on', state.look !== 'dark')
+}
+
+function openLookMenu() {
+  const btn = $('btn-bg')
+  if (menuOpenFor(btn)) {
+    closeMenu()
+    return
+  }
+  openMenu(
+    btn,
+    LOOKS.map(look => ({
+      label: `${look.label}${look.value === state.look ? '  ✓' : ''}`,
+      icon: look.icon,
+      run: () => {
+        state.look = look.value
+        writePref('bg', look.value)
+        applyBackground()
+      }
+    })),
+    '흰 배경에서 노란색, 하늘색 선이 흐리게 보이면 흑백으로 바꿔 보세요. 도면 파일은 바뀌지 않아요.'
+  )
 }
 
 /* ---------- layers ---------- */
@@ -764,11 +805,7 @@ function bindUi() {
   $('btn-fit').addEventListener('click', fitView)
   $('btn-layers').addEventListener('click', () => toggleLayerPanel())
   $('layer-close').addEventListener('click', () => toggleLayerPanel(false))
-  $('btn-bg').addEventListener('click', () => {
-    state.darkBackground = !state.darkBackground
-    writePref('bg', state.darkBackground ? 'dark' : 'light')
-    applyBackground()
-  })
+  $('btn-bg').addEventListener('click', openLookMenu)
   $('btn-pdf').addEventListener('click', openPdfSheet)
   $('pdf-close').addEventListener('click', closePdfSheet)
   $('pdf-sheet').addEventListener('click', e => {
@@ -870,7 +907,8 @@ function bindUi() {
 }
 
 async function boot() {
-  state.darkBackground = readPref('bg') !== 'light'
+  const look = readPref('bg')
+  state.look = look === 'light' || look === 'mono' ? look : 'dark'
   const paper = readPref('paper') as PaperChoice | null
   if (paper && ['original', 'A4', 'A3', 'A2', 'A1'].includes(paper)) state.paper = paper
   state.mono = readPref('color') !== 'color'
