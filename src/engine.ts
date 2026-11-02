@@ -191,6 +191,12 @@ export const selectionCount = () => AcApDocManager.instance.curView.selectionSet
 export function setCommandLineVisible(on: boolean) {
   AcApSettingManager.instance.apply({ isShowCommandLine: on }, { persist: false })
   document.body.classList.toggle('cli-on', on)
+  if (!on) return
+  // The input was built before the Korean wording was merged in.
+  requestAnimationFrame(() => {
+    const box = document.querySelector<HTMLInputElement>('.ml-cli-text')
+    if (box) box.placeholder = KO_PROMPTS.main.commandLine.placeholder
+  })
 }
 
 export function undoState() {
